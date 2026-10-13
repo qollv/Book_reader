@@ -1,0 +1,235 @@
+import 'dart:math' as math;
+
+import 'package:flutter/material.dart';
+import 'package:novel_reader/core/parsers/parsed_book.dart';
+import 'package:novel_reader/core/pagination/page_line.dart';
+
+/// 分页所需的排版参数。屏幕尺寸 + 用户外观设置共同决定。
+class PaginationConfig {
+  const PaginationConfig({
+    required this.fontSize,
+    required this.lineHeight,
+    required this.pageWidth,
+    required this.pageHeight,
+    required this.horizontalMargin,
+    required this.verticalMargin,
+    this.fontFamily = 'system',
+    this.textColor = const Color(0xFF1A1A1A),
+  });
+
+  final double fontSize;
+  final double lineHeight; // 行距倍数
+  final double pageWidth;
+  final double pageHeight;
+  final double horizontalMargin;
+  final double verticalMargin;
+  final String fontFamily;
+  final Color textColor;
+
+  double get lineHeightPx => fontSize * lineHeight;
+  double get paragraphSpacingPx => fontSize * 0.5;
+  double get firstLineIndentPx => fontSize * 2; // 首行缩进 2 字
+  double get contentWidth => pageWidth - horizontalMargin * 2;
+  double get availableHeight => pageHeight - verticalMargin * 2;
+
+  /// 每页最多可容纳的行数（正文行高计）。
+  int get maxLinesPerPage => availableHeight ~/ lineHeightPx;
+
+  /// 用于缓存比对：任一参数变化都必须重新分页。
+  String get cacheKey {
+    return '$fontSize|$lineHeight|$pageWidth|$pageHeight|$horizontalMargin|$verticalMargin|$fontFamily';
+  }
+}
+
+/// 智能分页引擎。
+///
+/// 规则：
+/// - 用 TextPainter 逐段测行，行高与渲染端一致，分页结果即视觉结果；
+/// - 所有行按「内容宽 - 首行缩进」测量，保证缩进后首行不溢出；
+/// - 标题 keep-with-next：剩余空间放不下「标题 + 2 行正文」时换页；
+/// - 孤行控制：拆页会只剩 1 行时，整段挪到下一页。
+class Paginator {
+  List<ReaderPage> paginate(List<ParagraphBlock> blocks, PaginationConfig config) {
+    final _PagingState state = _PagingState(config: config);
+
+    for (int blockIndex = 0; blockIndex < blocks.length; blockIndex++) {
+      final ParagraphBlock block = blocks[blockIndex];
+      if (block.text.trim().isEmpty) {
+        continue;
+      }
+      final List<_MeasuredLine> measured = _measureBlock(block, config);
+      if (measured.isEmpty) {
+        continue;
+      }
+      if (block.kind == ParagraphKind.heading) {
+        _placeHeading(state, block, blockIndex, measured);
+      } else {
+        _placeBody(state, block, blockIndex, measured);
+      }
+    }
+    return state.finish();
+  }
+
+  void _placeHeading(
+    _PagingState state,
+    ParagraphBlock block,
+    int blockIndex,
+    List<_MeasuredLine> measured,
+  ) {
+    final double headingHeight = _sumHeight(measured);
+    final double need = headingHeight + 2 * state.config.lineHeightPx;
+    if (state.hasContent && state.usedHeight + need > state.config.availableHeight) {
+      state.startNewPage();
+    }
+    state.appendLines(measured, block, blockIndex);
+  }
+
+  void _placeBody(
+    _PagingState state,
+    ParagraphBlock block,
+    int blockIndex,
+    List<_MeasuredLine> measured,
+  ) {
+    int lineStart = 0;
+    while (lineStart < measured.length) {
+      final int remaining = measured.length - lineStart;
+      final int fitCount = (state.config.availableHeight - state.usedHeight) ~/ state.config.lineHeightPx;
+
+      if (fitCount >= remaining) {
+        state.appendLines(measured.sublist(lineStart), block, blockIndex, lineStart);
+        return;
+      }
+      if (fitCount < 2 || remaining - fitCount < 2) {
+        // 拆页会留下孤行：整段挪到下一页
+        if (state.hasContent) {
+          state.startNewPage();
+        }
+        if (remaining <= state.config.maxLinesPerPage) {
+          state.appendLines(measured.sublist(lineStart), block, blockIndex, lineStart);
+          return;
+        }
+        // 段落比一页还长：按每页行数硬切
+        state.appendLines(
+          measured.sublist(lineStart, lineStart + state.config.maxLinesPerPage),
+          block,
+          blockIndex,
+          lineStart,
+        );
+        state.startNewPage();
+        lineStart += state.config.maxLinesPerPage;
+        continue;
+      }
+      state.appendLines(measured.sublist(lineStart, lineStart + fitCount), block, blockIndex, lineStart);
+      state.startNewPage();
+      lineStart += fitCount;
+    }
+  }
+
+  List<_MeasuredLine> _measureBlock(ParagraphBlock block, PaginationConfig config) {
+    final TextStyle style = _styleFor(block, config);
+    // 统一按减去首行缩进的宽度测量，缩进渲染后任何一行都不会溢出
+    final double maxWidth = math.max(config.contentWidth - config.firstLineIndentPx, 1);
+
+    final TextPainter painter = TextPainter(
+      textDirection: TextDirection.ltr,
+      text: TextSpan(text: block.text, style: style),
+    );
+    painter.layout(maxWidth: maxWidth);
+    final List<LineMetrics> metrics = painter.computeLineMetrics();
+    final List<_MeasuredLine> lines = <_MeasuredLine>[];
+    for (LineMetrics metric in metrics) {
+      final int start = math.min(math.max(metric.start, 0), block.text.length);
+      final int end = math.min(math.max(metric.end, start), block.text.length);
+      lines.add(_MeasuredLine(text: block.text.substring(start, end), height: metric.height));
+    }
+    painter.dispose();
+    return lines;
+  }
+
+  TextStyle _styleFor(ParagraphBlock block, PaginationConfig config) {
+    double fontSize = config.fontSize;
+    if (block.kind == ParagraphKind.heading) {
+      fontSize *= 1.3 - 0.1 * (block.headingLevel - 1);
+    } else if (block.kind == ParagraphKind.code) {
+      fontSize *= 0.9;
+    }
+    return TextStyle(
+      fontSize: fontSize,
+      height: config.lineHeight,
+      color: config.textColor,
+      fontFamily: config.fontFamily == 'system' ? null : config.fontFamily,
+    );
+  }
+
+  double _sumHeight(List<_MeasuredLine> lines) {
+    double total = 0;
+    for (_MeasuredLine line in lines) {
+      total += line.height;
+    }
+    return total;
+  }
+}
+
+/// 分页过程状态：页列表 + 当前页缓冲 + 已用高度。
+class _PagingState {
+  _PagingState({required this.config});
+
+  final PaginationConfig config;
+  final List<ReaderPage> pages = <ReaderPage>[];
+  final List<PageLine> current = <PageLine>[];
+  double usedHeight = 0;
+
+  bool get hasContent => current.isNotEmpty;
+
+  void startNewPage() {
+    if (current.isNotEmpty) {
+      pages.add(ReaderPage(index: pages.length, lines: List<PageLine>.from(current)));
+      current.clear();
+      usedHeight = 0;
+    }
+  }
+
+  void appendLines(List<_MeasuredLine> lines, ParagraphBlock block, int blockIndex, [int lineStart = 0]) {
+    final double spacing = current.isEmpty ? 0 : config.paragraphSpacingPx;
+    for (int i = 0; i < lines.length; i++) {
+      final int lineIndex = lineStart + i;
+      current.add(PageLine(
+        text: lines[i].text,
+        paragraphIndex: blockIndex,
+        lineIndex: lineIndex,
+        isFirstLineOfParagraph: lineIndex == 0,
+        kind: block.kind,
+        headingLevel: block.headingLevel,
+      ));
+      usedHeight += lines[i].height;
+    }
+    usedHeight += spacing;
+  }
+
+  List<ReaderPage> finish() {
+    startNewPage();
+    if (pages.isEmpty) {
+      pages.add(const ReaderPage(index: 0, lines: <PageLine>[]));
+    }
+    return pages;
+  }
+}
+
+/// 按锚点（章内段落下标 + 段内行下标）找所在页，找不到返回 0。
+int findPageForAnchor(List<ReaderPage> pages, int paragraphIndex, int lineIndex) {
+  for (ReaderPage page in pages) {
+    for (PageLine line in page.lines) {
+      if (line.paragraphIndex == paragraphIndex && line.lineIndex == lineIndex) {
+        return page.index;
+      }
+    }
+  }
+  return 0;
+}
+
+class _MeasuredLine {
+  const _MeasuredLine({required this.text, required this.height});
+
+  final String text;
+  final double height;
+}

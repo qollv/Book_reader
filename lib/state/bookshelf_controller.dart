@@ -1,0 +1,114 @@
+import 'package:flutter/material.dart';
+
+import 'package:novel_reader/data/dao/book_dao.dart';
+import 'package:novel_reader/data/dao/progress_dao.dart';
+import 'package:novel_reader/data/repositories/book_repository.dart';
+import 'package:novel_reader/models/book.dart';
+import 'package:novel_reader/models/reading_progress.dart';
+import 'package:novel_reader/services/import/book_importer.dart';
+
+/// 书籍 + 进度 的合并视图，书架列表直接用。
+class BookshelfItem {
+  const BookshelfItem({required this.book, required this.progress});
+
+  final Book book;
+  final ReadingProgress? progress;
+
+  double get percent => progress?.percent ?? 0;
+}
+
+/// 书架状态：列表加载、导入（本地/URL）、删书。
+class BookshelfController extends ChangeNotifier {
+  BookshelfController({
+    required BookDao bookDao,
+    required ProgressDao progressDao,
+    required BookRepository bookRepository,
+    required BookImporter importer,
+  }) : _bookDao = bookDao,
+       _progressDao = progressDao,
+       _bookRepository = bookRepository,
+       _importer = importer;
+
+  final BookDao _bookDao;
+  final ProgressDao _progressDao;
+  final BookRepository _bookRepository;
+  final BookImporter _importer;
+
+  List<BookshelfItem> _items = <BookshelfItem>[];
+  bool _isImporting = false;
+  double _importFraction = 0;
+  String? _importError;
+
+  List<BookshelfItem> get items => _items;
+  bool get isImporting => _isImporting;
+  double get importFraction => _importFraction;
+  String? get importError => _importError;
+
+  Future<void> load() async {
+    final List<Book> books = await _bookDao.findAll();
+    final List<BookshelfItem> items = <BookshelfItem>[];
+    for (Book book in books) {
+      final ReadingProgress? progress = await _progressDao.findByBook(book.id);
+      items.add(BookshelfItem(book: book, progress: progress));
+    }
+    _items = items;
+    notifyListeners();
+  }
+
+  /// 本地文件导入；用户取消时静默返回。
+  Future<Book?> importLocal() async {
+    _isImporting = true;
+    _importError = null;
+    _importFraction = 0;
+    notifyListeners();
+    try {
+      final Book? book = await _importer.pickLocal();
+      if (book != null) {
+        await load();
+      }
+      return book;
+    } catch (error) {
+      _importError = error.toString();
+      return null;
+    } finally {
+      _isImporting = false;
+      notifyListeners();
+    }
+  }
+
+  Future<Book?> importFromUrl(String url) async {
+    _isImporting = true;
+    _importError = null;
+    _importFraction = 0;
+    notifyListeners();
+    try {
+      final Book book = await _importer.fromUrl(
+        url,
+        onProgress: (int received, int total) {
+          if (total > 0) {
+            _importFraction = received / total;
+            notifyListeners();
+          }
+        },
+      );
+      await load();
+      return book;
+    } catch (error) {
+      _importError = error.toString();
+      return null;
+    } finally {
+      _isImporting = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> deleteBook(String bookId) async {
+    await _bookRepository.deleteBook(bookId);
+    await load();
+  }
+
+  void clearError() {
+    _importError = null;
+    notifyListeners();
+  }
+}
