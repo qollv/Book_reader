@@ -56,16 +56,16 @@ class ReadingNote {
 
   static ReadingNote fromRow(Map<String, Object?> row) {
     return ReadingNote(
-      id: row['id'] as String,
-      bookId: row['book_id'] as String,
-      chapterIndex: row['chapter_index'] as int,
-      paragraphIndex: row['paragraph_index'] as int,
-      lineIndex: row['line_index'] as int,
-      chapterTitle: row['chapter_title'] as String,
-      selectedText: row['selected_text'] as String,
-      content: row['content'] as String,
-      createdAt: row['created_at'] as int,
-      updatedAt: row['updated_at'] as int,
+      id: row['id'] as String? ?? '',
+      bookId: row['book_id'] as String? ?? '',
+      chapterIndex: (row['chapter_index'] as num?)?.toInt() ?? 0,
+      paragraphIndex: (row['paragraph_index'] as num?)?.toInt() ?? 0,
+      lineIndex: (row['line_index'] as num?)?.toInt() ?? 0,
+      chapterTitle: row['chapter_title'] as String? ?? '',
+      selectedText: row['selected_text'] as String? ?? '',
+      content: row['content'] as String? ?? '',
+      createdAt: (row['created_at'] as num?)?.toInt() ?? 0,
+      updatedAt: (row['updated_at'] as num?)?.toInt() ?? 0,
     );
   }
 }

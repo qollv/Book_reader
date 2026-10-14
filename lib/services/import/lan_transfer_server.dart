@@ -28,6 +28,9 @@ class LanTransferServer {
 
   static const String _tokenHeader = 'x-token';
 
+  /// 请求体上限：与 URL 导入一致（100MB）。
+  static const int _maxBodyBytes = 100 * 1024 * 1024;
+
   final String _booksRoot;
   final String _inboxPath;
   final void Function(String filePath) _onFileReceived;
@@ -55,8 +58,12 @@ class LanTransferServer {
       ..get('/sync', _requireToken(_handleSyncDownload))
       ..post('/sync', _requireToken(_handleSyncUpload));
 
-    // 端口被占用时让系统自动分配
-    _server = await serve(router.call, InternetAddress.anyIPv4, preferredPort, shared: false);
+    try {
+      _server = await serve(router.call, InternetAddress.anyIPv4, preferredPort, shared: false);
+    } on SocketException {
+      // 首选端口被占用：退到系统自动分配，而不是整个服务起不来
+      _server = await serve(router.call, InternetAddress.anyIPv4, 0, shared: false);
+    }
     _port = _server!.port;
   }
 
@@ -125,11 +132,17 @@ class LanTransferServer {
       return Response.badRequest(body: 'invalid name');
     }
     final File target = File(p.join(_inboxPath, safeName));
-    final List<int> body = await request.read().expand((List<int> chunk) => chunk).toList();
+    final List<int>? body = await _readBodyWithLimit(request);
+    if (body == null) {
+      return Response(413, body: 'body too large');
+    }
     if (body.isEmpty) {
       return Response.badRequest(body: 'empty body');
     }
-    await target.writeAsBytes(body, flush: true);
+    // 临时文件 + rename 原子落盘，中断不会留下半个文件
+    final File temp = File('${target.path}.tmp');
+    await temp.writeAsBytes(body, flush: true);
+    await temp.rename(target.path);
     _onFileReceived(target.path);
     return Response.ok(jsonEncode(<String, Object?>{'saved': safeName}),
         headers: <String, String>{'content-type': 'application/json'});
@@ -154,18 +167,45 @@ class LanTransferServer {
   }
 
   Future<Response> _handleSyncUpload(Request request) async {
-    final List<int> body = await request.read().expand((List<int> chunk) => chunk).toList();
+    final List<int>? body = await _readBodyWithLimit(request);
+    if (body == null) {
+      return Response(413, body: 'body too large');
+    }
     if (body.isEmpty) {
       return Response.badRequest(body: 'empty body');
     }
-    await File(_syncStorePath).writeAsBytes(body, flush: true);
+    // 临时文件 + rename 原子落盘，避免中断损坏 sync.json
+    final File temp = File('$_syncStorePath.tmp');
+    await temp.writeAsBytes(body, flush: true);
+    await temp.rename(_syncStorePath);
     return Response.ok(jsonEncode(<String, Object?>{'saved': true}),
         headers: <String, String>{'content-type': 'application/json'});
+  }
+
+  /// 读请求体并限制大小：先看 content-length，再按流累计上限（与 URL 导入一致 100MB）。
+  /// 返回 null 表示超限。
+  Future<List<int>?> _readBodyWithLimit(Request request) async {
+    final Object? declared = request.headers['content-length'];
+    if (declared != null) {
+      final int? length = int.tryParse(declared.toString());
+      if (length != null && length > _maxBodyBytes) {
+        return null;
+      }
+    }
+    final List<int> body = <int>[];
+    await for (List<int> chunk in request.read()) {
+      body.addAll(chunk);
+      if (body.length > _maxBodyBytes) {
+        return null;
+      }
+    }
+    return body;
   }
 }
 
 String _randomToken() {
   final Random random = Random.secure();
   const String alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  return List<String>.generate(6, (_) => alphabet[random.nextInt(alphabet.length)]).join();
+  // 8 位令牌：局域网明文传输，提高爆破成本
+  return List<String>.generate(8, (_) => alphabet[random.nextInt(alphabet.length)]).join();
 }

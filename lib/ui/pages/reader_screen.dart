@@ -4,13 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'package:novel_reader/core/parsers/parsed_book.dart';
+import 'package:novel_reader/core/pagination/block_metrics.dart';
 import 'package:novel_reader/core/pagination/page_line.dart';
 import 'package:novel_reader/core/pagination/paginator.dart';
 import 'package:novel_reader/models/reader_settings.dart';
 import 'package:novel_reader/state/reader_controller.dart';
 import 'package:novel_reader/state/settings_controller.dart';
 import 'package:novel_reader/ui/pages/annotations_page.dart';
-import 'package:novel_reader/ui/theme/reading_palettes.dart';
+import 'package:novel_reader/models/reading_palette.dart';
 import 'package:novel_reader/ui/theme/theme_mode_resolver.dart';
 import 'package:novel_reader/ui/widgets/reader_settings_sheet.dart';
 
@@ -27,6 +28,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
   int _controllerChapter = -1;
   bool _menuVisible = false;
   String _lastConfigKey = '';
+  ReaderController? _boundReader;
 
   /// 章节切换时新建控制器落到目标页；同章复用，保持滚动位置。
   PageController _controllerFor(int chapterIndex, int pageIndex) {
@@ -39,9 +41,44 @@ class _ReaderScreenState extends State<ReaderScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final ReaderController reader = context.read<ReaderController>();
+    if (!identical(reader, _boundReader)) {
+      _boundReader?.removeListener(_onReaderChanged);
+      _boundReader = reader;
+      reader.addListener(_onReaderChanged);
+    }
+  }
+
+  @override
   void dispose() {
+    _boundReader?.removeListener(_onReaderChanged);
     _pageController?.dispose();
     super.dispose();
+  }
+
+  /// 状态页码变化（滑块/书签跳转/目录/重排版）后，把视图同步到目标页。
+  /// PageController 附加后不受 widget 参数影响，必须显式跳转。
+  void _onReaderChanged() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _syncViewToState();
+    });
+  }
+
+  void _syncViewToState() {
+    final PageController? controller = _pageController;
+    if (controller == null || !controller.hasClients) {
+      return;
+    }
+    final ReaderController reader = context.read<ReaderController>();
+    final int target = reader.pageIndex;
+    if ((controller.page ?? target).round() != target) {
+      controller.jumpToPage(target);
+    }
   }
 
   PaginationConfig _buildConfig(ReaderSettings settings, Size size, Color textColor) {
@@ -138,21 +175,13 @@ class _ReaderScreenState extends State<ReaderScreen> {
     if (config.cacheKey != _lastConfigKey) {
       _lastConfigKey = config.cacheKey;
       reader.provideConfig(config);
-      // 屏幕尺寸或外观变化：等当前帧布局完成再重排版，避免 build 期间改状态
+      // 屏幕尺寸或外观变化：等当前帧布局完成再重排版，避免 build 期间改状态。
+      // 重排版后 notifyListeners 会触发 _onReaderChanged → _syncViewToState 回跳锚点页。
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) {
           return;
         }
-        reader.repaginate(config).then((_) {
-          final PageController? controller = _pageController;
-          if (!mounted || controller == null || !controller.hasClients) {
-            return;
-          }
-          final int target = reader.pageIndex;
-          if ((controller.page ?? target).round() != target) {
-            controller.jumpToPage(target);
-          }
-        });
+        reader.repaginate(config);
       });
     }
 
@@ -166,6 +195,12 @@ class _ReaderScreenState extends State<ReaderScreen> {
           children: <Widget>[
             if (reader.isLoading)
               const Center(child: CircularProgressIndicator())
+            else if (reader.error != null)
+              _ReaderErrorPage(
+                message: reader.error!,
+                palette: palette,
+                onBack: () => Navigator.pop(context),
+              )
             else if (page != null)
               PageView.builder(
                 key: ValueKey<int>(reader.chapterIndex),
@@ -222,7 +257,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
   }
 }
 
-/// 单页正文：按行渲染，首行缩进、标题居中、引用带侧边线、代码等宽。
+/// 单页正文：按块分组渲染。
+///
+/// 行先按段落聚成块片段，块级边距（标题留白/引用边线/代码底纹）整个块只画一次——
+/// 与分页预算（BlockMetrics）严格同源，保证"分页即视觉"。
 class _PageContentView extends StatelessWidget {
   const _PageContentView({
     required this.page,
@@ -239,6 +277,9 @@ class _PageContentView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final double baseSize = 18 * settings.fontScale;
+    final BlockMetrics metrics = BlockMetrics(baseSize);
+    final List<List<PageLine>> pieces = _groupPieces(page.lines);
+
     return SingleChildScrollView(
       padding: EdgeInsets.symmetric(
         horizontal: settings.horizontalMargin,
@@ -247,54 +288,109 @@ class _PageContentView extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
-        children: page.lines.map((PageLine line) => _buildLine(line, baseSize)).toList(),
+        children: <Widget>[
+          for (int i = 0; i < pieces.length; i++) ...<Widget>[
+            // 块间距：页面首个块不画（与分页预算一致）
+            if (i > 0) SizedBox(height: metrics.paragraphSpacing),
+            _buildPiece(pieces[i], baseSize, metrics),
+          ],
+        ],
       ),
     );
   }
 
-  Widget _buildLine(PageLine line, double baseSize) {
+  /// 把连续同段的行聚成块片段。
+  List<List<PageLine>> _groupPieces(List<PageLine> lines) {
+    final List<List<PageLine>> pieces = <List<PageLine>>[];
+    for (PageLine line in lines) {
+      if (pieces.isNotEmpty && pieces.last.first.paragraphIndex == line.paragraphIndex) {
+        pieces.last.add(line);
+      } else {
+        pieces.add(<PageLine>[line]);
+      }
+    }
+    return pieces;
+  }
+
+  Widget _buildPiece(List<PageLine> lines, double baseSize, BlockMetrics metrics) {
+    final PageLine head = lines.first;
+    final double blockSize = BlockMetrics.fontSizeFor(head.kind, head.headingLevel, baseSize);
     final TextStyle style = TextStyle(
-      fontSize: baseSize,
+      fontSize: blockSize,
       height: settings.lineHeight,
       color: palette.text,
       fontFamily: settings.fontFamily == 'system' ? null : settings.fontFamily,
     );
-    if (line.isHeading) {
-      final double scale = 1.3 - 0.1 * (line.headingLevel - 1);
+
+    if (head.isHeading) {
+      final double headingSize =
+          BlockMetrics.fontSizeFor(head.kind, head.headingLevel, baseSize);
       return Padding(
-        padding: EdgeInsets.symmetric(vertical: baseSize * 0.3),
-        child: Text(
-          line.text,
-          textAlign: TextAlign.center,
-          style: style.copyWith(fontSize: baseSize * scale, fontWeight: FontWeight.bold),
+        padding: EdgeInsets.symmetric(vertical: metrics.headingPadding(head.headingLevel)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            for (PageLine line in lines)
+              Text(
+                line.text,
+                textAlign: TextAlign.center,
+                style: style.copyWith(
+                  fontSize: headingSize,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+          ],
         ),
       );
     }
-    if (line.kind == ParagraphKind.quote) {
+    if (head.kind == ParagraphKind.quote) {
       return Container(
-        margin: EdgeInsets.symmetric(vertical: baseSize * 0.2),
-        padding: EdgeInsets.only(left: baseSize * 0.8),
+        margin: EdgeInsets.symmetric(vertical: metrics.quoteMargin),
+        padding: EdgeInsets.only(left: metrics.quoteIndent * 0.4),
         decoration: BoxDecoration(
           border: Border(left: BorderSide(color: palette.secondary, width: 2)),
         ),
-        child: Text(line.text, style: style.copyWith(color: palette.secondary)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            for (PageLine line in lines)
+              _lineText(line, style.copyWith(color: palette.secondary)),
+          ],
+        ),
       );
     }
-    if (line.kind == ParagraphKind.code) {
+    if (head.kind == ParagraphKind.code) {
       return Container(
-        margin: EdgeInsets.symmetric(vertical: baseSize * 0.2),
-        padding: EdgeInsets.all(baseSize * 0.5),
+        margin: EdgeInsets.symmetric(vertical: metrics.codeMargin),
+        padding: EdgeInsets.all(metrics.codePadding),
         color: palette.secondary.withValues(alpha: 0.12),
-        child: Text(line.text, style: style.copyWith(fontFamily: 'monospace')),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            for (PageLine line in lines)
+              _lineText(line, style.copyWith(fontFamily: 'monospace')),
+          ],
+        ),
       );
     }
-    if (line.isFirstLineOfParagraph) {
-      return Padding(
-        padding: EdgeInsets.only(left: baseSize * 2),
-        child: _lineText(line, style),
-      );
-    }
-    return _lineText(line, style);
+    // 正文块：仅段首行缩进
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        for (PageLine line in lines)
+          if (line.isFirstLineOfParagraph)
+            Padding(
+              padding: EdgeInsets.only(left: baseSize * 2),
+              child: _lineText(line, style),
+            )
+          else
+            _lineText(line, style),
+      ],
+    );
   }
 
   Widget _lineText(PageLine line, TextStyle style) {
@@ -305,7 +401,6 @@ class _PageContentView extends StatelessWidget {
     );
   }
 }
-
 class _ReaderTopBar extends StatelessWidget {
   const _ReaderTopBar({
     required this.palette,
@@ -455,6 +550,46 @@ class _BarButton extends StatelessWidget {
       onPressed: onPressed,
       icon: Icon(icon, color: palette.text, size: 18),
       label: Text(label, style: TextStyle(color: palette.text)),
+    );
+  }
+}
+
+/// 打开失败时的错误页：明确提示 + 返回书架出口。
+class _ReaderErrorPage extends StatelessWidget {
+  const _ReaderErrorPage({
+    required this.message,
+    required this.palette,
+    required this.onBack,
+  });
+
+  final String message;
+  final ReadingPalette palette;
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(Icons.error_outline, size: 48, color: palette.secondary),
+            const SizedBox(height: 16),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 15, color: palette.text),
+            ),
+            const SizedBox(height: 24),
+            FilledButton.icon(
+              onPressed: onBack,
+              icon: const Icon(Icons.arrow_back),
+              label: const Text('返回书架'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

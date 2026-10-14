@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'package:novel_reader/data/dao/app_state_dao.dart';
 import 'package:novel_reader/models/reader_settings.dart';
 import 'package:novel_reader/services/import/lan_transfer_server.dart';
 import 'package:novel_reader/services/sync/sync_service.dart';
@@ -8,7 +9,7 @@ import 'package:novel_reader/state/bookshelf_controller.dart';
 import 'package:novel_reader/state/reader_controller.dart';
 import 'package:novel_reader/state/settings_controller.dart';
 import 'package:novel_reader/ui/pages/bookshelf_page.dart';
-import 'package:novel_reader/ui/theme/reading_palettes.dart';
+import 'package:novel_reader/models/reading_palette.dart';
 import 'package:novel_reader/ui/theme/theme_mode_resolver.dart';
 
 class NovelReaderApp extends StatelessWidget {
@@ -19,6 +20,7 @@ class NovelReaderApp extends StatelessWidget {
     required this.readerController,
     required this.lanServer,
     required this.syncService,
+    required this.appStateDao,
   });
 
   final SettingsController settingsController;
@@ -26,6 +28,7 @@ class NovelReaderApp extends StatelessWidget {
   final ReaderController readerController;
   final LanTransferServer lanServer;
   final ProgressSyncService syncService;
+  final AppStateDao appStateDao;
 
   @override
   Widget build(BuildContext context) {
@@ -39,6 +42,7 @@ class NovelReaderApp extends StatelessWidget {
         providers: <Provider<Object>>[
           Provider<LanTransferServer>.value(value: lanServer),
           Provider<ProgressSyncService>.value(value: syncService),
+          Provider<AppStateDao>.value(value: appStateDao),
         ],
         child: Consumer<SettingsController>(
           builder: (BuildContext context, SettingsController settingsController, Widget? child) {

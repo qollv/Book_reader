@@ -1,8 +1,8 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:novel_reader/core/parsers/book_parser.dart';
 import 'package:novel_reader/core/parsers/parsed_book.dart';
+import 'package:novel_reader/core/text/book_text_reader.dart';
 
 /// Markdown 解析：# / ## 视为章节标题，### 视为段内标题，
 /// 引用/列表/代码块保留结构，行内 Markdown 语法被剥离。
@@ -12,14 +12,15 @@ class MarkdownParser implements BookParser {
   static final RegExp _bullet = RegExp(r'^\s*[-*+]\s+(.*)$');
   static final RegExp _ordered = RegExp(r'^\s*\d+[.、]\s+(.*)$');
   static final RegExp _bold = RegExp(r'\*\*(.+?)\*\*');
-  static final RegExp _italic = RegExp(r'\*(.+?)\*|_(.+?)_');
+  // 下划线斜体限定两侧非单词字符，避免误吞 snake_case_name / URL 中的下划线
+  static final RegExp _italic = RegExp(r'\*(.+?)\*|(?<![\w])_([^_]+)_(?![\w])');
   static final RegExp _code = RegExp(r'`([^`]+)`');
   static final RegExp _link = RegExp(r'\[([^\]]+)\]\([^)]*\)');
   static final RegExp _image = RegExp(r'!\[([^\]]*)\]\([^)]*\)');
 
   @override
   Future<ParsedBook> parseFile(String path) async {
-    final String raw = await File(path).readAsString(encoding: utf8);
+    final String raw = await readBookText(path);
     final List<String> lines = const LineSplitter().convert(raw);
 
     final String title = guessTitle(lines, fileNameTitle(path));
@@ -107,13 +108,14 @@ class MarkdownParser implements BookParser {
   }
 
   /// 剥离行内 Markdown 语法，只留纯文本。
-  /// 替换串用原始字符串：$1 是正则反向引用，不能被 Dart 当成插值。
+  /// 注意：Dart 的 replaceAll(RegExp, String) 不解析 $n 反向引用（替换串按字面量写入），
+  /// 必须用 replaceAllMapped 取分组内容。
   static String stripInline(String text) {
-    String result = text.replaceAll(_image, r'$1');
-    result = result.replaceAll(_link, r'$1');
-    result = result.replaceAll(_bold, r'$1');
-    result = result.replaceAll(_italic, r'$1$2');
-    result = result.replaceAll(_code, r'$1');
+    String result = text.replaceAllMapped(_image, (Match m) => m.group(1) ?? '');
+    result = result.replaceAllMapped(_link, (Match m) => m.group(1) ?? '');
+    result = result.replaceAllMapped(_bold, (Match m) => m.group(1) ?? '');
+    result = result.replaceAllMapped(_italic, (Match m) => m.group(1) ?? m.group(2) ?? '');
+    result = result.replaceAllMapped(_code, (Match m) => m.group(1) ?? '');
     return result.trim();
   }
 }

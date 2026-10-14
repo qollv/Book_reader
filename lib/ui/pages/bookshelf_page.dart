@@ -1,14 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
 
+import 'package:novel_reader/data/dao/app_state_dao.dart';
 import 'package:novel_reader/models/book.dart';
 import 'package:novel_reader/services/sync/sync_service.dart';
+import 'package:novel_reader/services/sync/sync_transports.dart';
 import 'package:novel_reader/state/bookshelf_controller.dart';
 import 'package:novel_reader/state/reader_controller.dart';
 import 'package:novel_reader/state/settings_controller.dart';
 import 'package:novel_reader/ui/pages/reader_screen.dart';
-import 'package:novel_reader/ui/theme/reading_palettes.dart';
+import 'package:novel_reader/models/reading_palette.dart';
 import 'package:novel_reader/ui/widgets/import_options_sheet.dart';
+
+const String _keyDeviceId = 'device_id';
+const String _keySyncBaseUrl = 'sync_base_url';
+const String _keySyncApiToken = 'sync_api_token';
 
 class BookshelfPage extends StatefulWidget {
   const BookshelfPage({super.key});
@@ -18,9 +25,6 @@ class BookshelfPage extends StatefulWidget {
 }
 
 class _BookshelfPageState extends State<BookshelfPage> {
-  // 设备 ID 实际应首次生成后持久化，这里用固定值演示合并逻辑
-  static const String _deviceId = 'device-local';
-
   @override
   void initState() {
     super.initState();
@@ -71,18 +75,99 @@ class _BookshelfPageState extends State<BookshelfPage> {
   }
 
   Future<void> _sync() async {
+    final AppStateDao appState = context.read<AppStateDao>();
     final ProgressSyncService service = context.read<ProgressSyncService>();
-    final SyncReport report = await service.sync(_deviceId);
-    if (!mounted) {
-      return;
+
+    // 设备号：首次生成 UUID 并持久化，多设备合并时才不会互相覆盖
+    String? deviceId = await appState.get(_keyDeviceId);
+    if (deviceId == null) {
+      deviceId = const Uuid().v4();
+      await appState.set(_keyDeviceId, deviceId);
     }
-    await context.read<BookshelfController>().load();
-    if (!mounted) {
-      return;
+
+    // 未配置同步端点时先弹配置框；用户取消则放弃本次同步
+    String baseUrl = (await appState.get(_keySyncBaseUrl)) ?? '';
+    String apiToken = (await appState.get(_keySyncApiToken)) ?? '';
+    if (baseUrl.trim().isEmpty && mounted) {
+      final Map<String, String>? config = await _askSyncConfig(context, baseUrl, apiToken);
+      if (config == null || !mounted) {
+        return;
+      }
+      baseUrl = config['base_url']!.trim();
+      apiToken = config['api_token']!.trim();
+      if (baseUrl.isEmpty) {
+        return;
+      }
+      await appState.set(_keySyncBaseUrl, baseUrl);
+      await appState.set(_keySyncApiToken, apiToken);
     }
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text('同步完成：进度 ${report.pulledProgress}，书签 ${report.pulledBookmarks}，笔记 ${report.pulledNotes}'),
-    ));
+
+    try {
+      final SyncReport report = await service.sync(
+        deviceId,
+        CloudSyncTransport(baseUrl: baseUrl, apiToken: apiToken),
+      );
+      if (!mounted) {
+        return;
+      }
+      await context.read<BookshelfController>().load();
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('同步完成：进度 ${report.pulledProgress}，书签 ${report.pulledBookmarks}，笔记 ${report.pulledNotes}'),
+      ));
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('同步失败：$error')));
+    }
+  }
+
+  /// 同步端点配置对话框：云端服务地址 + 访问令牌，均由用户自备。
+  Future<Map<String, String>?> _askSyncConfig(
+    BuildContext context,
+    String initialUrl,
+    String initialToken,
+  ) async {
+    final TextEditingController urlController = TextEditingController(text: initialUrl);
+    final TextEditingController tokenController = TextEditingController(text: initialToken);
+    final Map<String, String>? result = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('配置同步服务'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              TextField(
+                controller: urlController,
+                keyboardType: TextInputType.url,
+                decoration: const InputDecoration(labelText: '服务地址', hintText: 'https://your-sync-server/'),
+              ),
+              TextField(
+                controller: tokenController,
+                decoration: const InputDecoration(labelText: '访问令牌'),
+              ),
+            ],
+          ),
+          actions: <Widget>[
+            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('取消')),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, <String, String>{
+                'base_url': urlController.text,
+                'api_token': tokenController.text,
+              }),
+              child: const Text('保存并同步'),
+            ),
+          ],
+        );
+      },
+    );
+    urlController.dispose();
+    tokenController.dispose();
+    return result;
   }
 
   Future<void> _confirmDelete(BookshelfItem item) async {
@@ -200,7 +285,7 @@ class _BookCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(6),
               ),
               child: Text(
-                book.title.isEmpty ? '书' : book.title[0],
+                book.title.characters.isEmpty ? '书' : book.title.characters.first,
                 style: const TextStyle(fontSize: 42, color: Colors.white70),
               ),
             ),

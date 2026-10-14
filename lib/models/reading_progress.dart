@@ -43,12 +43,13 @@ class ReadingProgress {
 
   static ReadingProgress fromRow(Map<String, Object?> row) {
     return ReadingProgress(
-      bookId: row['book_id'] as String,
-      chapterIndex: row['chapter_index'] as int,
-      paragraphIndex: row['paragraph_index'] as int,
-      lineIndex: row['line_index'] as int,
-      percent: row['percent'] as double,
-      updatedAt: row['updated_at'] as int,
+      bookId: row['book_id'] as String? ?? '',
+      chapterIndex: (row['chapter_index'] as num?)?.toInt() ?? 0,
+      paragraphIndex: (row['paragraph_index'] as num?)?.toInt() ?? 0,
+      lineIndex: (row['line_index'] as num?)?.toInt() ?? 0,
+      // 对端设备可能写 int 而非 double，统一 toDouble
+      percent: (row['percent'] as num?)?.toDouble() ?? 0,
+      updatedAt: (row['updated_at'] as num?)?.toInt() ?? 0,
     );
   }
 }

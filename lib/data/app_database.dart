@@ -24,8 +24,21 @@ class AppDatabase {
       p.join(dir, _dbName),
       version: _dbVersion,
       onCreate: _createTables,
+      onUpgrade: _onUpgrade,
+      onDowngrade: _onDowngrade,
     );
     return _database!;
+  }
+
+  /// 版本升级迁移：按顺序执行 DDL，绝不回滚式重建（用户数据无价）。
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    // v1 → v2 示例（实际有迁移时取消注释并补 DDL）：
+    // if (oldVersion < 2) { await db.execute('ALTER TABLE books ADD COLUMN cover_path TEXT'); }
+  }
+
+  /// 降级（装回旧版 App）：保留数据，由旧版本代码自行兼容。
+  Future<void> _onDowngrade(Database db, int oldVersion, int newVersion) async {
+    // 暂不做任何操作：旧代码读不到新列时会忽略它们
   }
 
   Future<void> _createTables(Database db, int version) async {
@@ -94,6 +107,12 @@ class AppDatabase {
       CREATE TABLE settings (
         id INTEGER PRIMARY KEY CHECK (id = 0),
         payload TEXT NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE app_state (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
       )
     ''');
   }

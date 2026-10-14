@@ -1,8 +1,8 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:novel_reader/core/parsers/book_parser.dart';
 import 'package:novel_reader/core/parsers/parsed_book.dart';
+import 'package:novel_reader/core/text/book_text_reader.dart';
 import 'package:novel_reader/core/text/text_normalizer.dart';
 
 /// txt 解析：章节识别 + 硬换行合并。
@@ -14,7 +14,8 @@ class TxtParser implements BookParser {
 
   @override
   Future<ParsedBook> parseFile(String path) async {
-    final String raw = await File(path).readAsString(encoding: utf8);
+    // 编码回退：UTF-8 → GBK，失败抛 ImportException
+    final String raw = await readBookText(path);
     final List<String> lines = const LineSplitter().convert(raw);
 
     final String title = guessTitle(lines, fileNameTitle(path));
@@ -64,19 +65,16 @@ class TxtParser implements BookParser {
     pendingLines.clear();
   }
 
-  /// 已用作书名的前几行从正文中去掉，避免开头重复。
+  /// 跳过前导空行后再删书名行——空行不计入删除配额，
+  /// 否则两个前导空行就会把配额耗尽，书名残留并与正文粘连。
   List<String> _dropTitleLines(List<String> lines, String title) {
-    int dropped = 0;
-    for (String line in lines) {
-      if (dropped >= 2) {
-        break;
-      }
-      if (line.trim() == title || line.trim().isEmpty) {
-        dropped++;
-        continue;
-      }
-      break;
+    int index = 0;
+    while (index < lines.length && lines[index].trim().isEmpty) {
+      index++;
     }
-    return lines.skip(dropped).toList();
+    if (index < lines.length && lines[index].trim() == title) {
+      index++;
+    }
+    return lines.sublist(index);
   }
 }

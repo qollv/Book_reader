@@ -3,7 +3,8 @@ import 'package:provider/provider.dart';
 
 import 'package:novel_reader/models/bookmark.dart';
 import 'package:novel_reader/state/reader_controller.dart';
-import 'package:novel_reader/ui/theme/reading_palettes.dart';
+import 'package:novel_reader/state/settings_controller.dart';
+import 'package:novel_reader/models/reading_palette.dart';
 
 /// 书签与笔记页：两个 Tab，点击条目跳回原文位置。
 class AnnotationsPage extends StatelessWidget {
@@ -12,7 +13,9 @@ class AnnotationsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ReaderController reader = context.watch<ReaderController>();
-    final ReadingPalette palette = ReadingPalette.all[0];
+    final SettingsController settingsController = context.watch<SettingsController>();
+    final ReadingPalette palette =
+        ReadingPalette.all[settingsController.settings.paletteIndex];
 
     return DefaultTabController(
       length: 2,

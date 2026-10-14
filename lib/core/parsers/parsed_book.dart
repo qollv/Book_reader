@@ -25,12 +25,12 @@ class ParagraphBlock {
 
   static ParagraphBlock fromJson(Map<String, Object?> json) {
     return ParagraphBlock(
-      text: json['text'] as String,
+      text: json['text'] as String? ?? '',
       kind: ParagraphKind.values.firstWhere(
         (kind) => kind.name == json['kind'],
         orElse: () => ParagraphKind.paragraph,
       ),
-      headingLevel: json['level'] as int,
+      headingLevel: (json['level'] as num?)?.toInt() ?? 1,
     );
   }
 }

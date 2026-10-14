@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
 import 'package:novel_reader/data/app_database.dart';
+import 'package:novel_reader/data/dao/app_state_dao.dart';
 import 'package:novel_reader/data/dao/book_dao.dart';
 import 'package:novel_reader/data/dao/bookmark_dao.dart';
 import 'package:novel_reader/data/dao/chapter_dao.dart';
@@ -20,7 +21,6 @@ import 'package:novel_reader/services/import/lan_transfer_server.dart';
 import 'package:novel_reader/services/import/local_file_importer.dart';
 import 'package:novel_reader/services/import/url_importer.dart';
 import 'package:novel_reader/services/sync/sync_service.dart';
-import 'package:novel_reader/services/sync/sync_transports.dart';
 import 'package:novel_reader/state/bookshelf_controller.dart';
 import 'package:novel_reader/state/reader_controller.dart';
 import 'package:novel_reader/state/settings_controller.dart';
@@ -57,6 +57,8 @@ Future<void> main() async {
   final String inboxPath = p.join(supportDir.path, 'inbox');
   await Directory(inboxPath).create(recursive: true);
 
+  final AppStateDao appStateDao = AppStateDao(db);
+
   final LanTransferServer lanServer = LanTransferServer(
     booksRoot: booksRoot,
     inboxPath: inboxPath,
@@ -67,16 +69,12 @@ Future<void> main() async {
     },
   );
 
-  // 云端同步通道：地址与令牌由用户在设置页填写，程序不内置默认值
-  final SyncTransport syncTransport = CloudSyncTransport(
-    baseUrl: 'https://sync.example.invalid',
-    apiToken: '',
-  );
+  // 同步传输通道在用户点击同步时按 app_state 里的配置现场构造，
+  // 程序不内置任何默认端点。
   final ProgressSyncService syncService = ProgressSyncService(
     progressDao: progressDao,
     bookmarkDao: bookmarkDao,
     noteDao: noteDao,
-    transport: syncTransport,
   );
 
   final SettingsController settingsController = SettingsController(settingsDao);
@@ -102,5 +100,6 @@ Future<void> main() async {
     readerController: readerController,
     lanServer: lanServer,
     syncService: syncService,
+    appStateDao: appStateDao,
   ));
 }

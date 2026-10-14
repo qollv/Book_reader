@@ -24,14 +24,22 @@ class LanSyncTransport implements SyncTransport {
 
   @override
   Future<SyncPayload?> download() async {
-    final Response<dynamic> response = await _dio.get<dynamic>(
-      '${_peerBaseUrl}sync',
-      options: Options(headers: _headers),
-    );
-    if (response.statusCode == 404 || response.data == null) {
-      return null;
+    try {
+      final Response<dynamic> response = await _dio.get<dynamic>(
+        '${_peerBaseUrl}sync',
+        options: Options(headers: _headers),
+      );
+      if (response.statusCode == 404 || response.data == null) {
+        return null;
+      }
+      return SyncPayload.fromJson(response.data as Map<String, Object?>);
+    } on DioException catch (error) {
+      // 对端尚无同步数据是首同步的正常场景，返回 null 而非抛异常
+      if (error.response?.statusCode == 404) {
+        return null;
+      }
+      rethrow;
     }
-    return SyncPayload.fromJson(response.data as Map<String, Object?>);
   }
 
   @override
@@ -58,14 +66,21 @@ class CloudSyncTransport implements SyncTransport {
 
   @override
   Future<SyncPayload?> download() async {
-    final Response<dynamic> response = await _dio.get<dynamic>(
-      '${_baseUrl}sync',
-      options: Options(headers: <String, String>{'authorization': 'Bearer $_apiToken'}),
-    );
-    if (response.statusCode == 404 || response.data == null) {
-      return null;
+    try {
+      final Response<dynamic> response = await _dio.get<dynamic>(
+        '${_baseUrl}sync',
+        options: Options(headers: <String, String>{'authorization': 'Bearer $_apiToken'}),
+      );
+      if (response.statusCode == 404 || response.data == null) {
+        return null;
+      }
+      return SyncPayload.fromJson(response.data as Map<String, Object?>);
+    } on DioException catch (error) {
+      if (error.response?.statusCode == 404) {
+        return null;
+      }
+      rethrow;
     }
-    return SyncPayload.fromJson(response.data as Map<String, Object?>);
   }
 
   @override

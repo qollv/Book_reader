@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 
+import 'package:novel_reader/core/import_exception.dart';
 import 'package:novel_reader/data/dao/book_dao.dart';
 import 'package:novel_reader/data/dao/progress_dao.dart';
 import 'package:novel_reader/data/repositories/book_repository.dart';
 import 'package:novel_reader/models/book.dart';
 import 'package:novel_reader/models/reading_progress.dart';
 import 'package:novel_reader/services/import/book_importer.dart';
-import 'package:novel_reader/services/import/local_file_importer.dart';
 
 /// 书籍 + 进度 的合并视图，书架列表直接用。
 class BookshelfItem {

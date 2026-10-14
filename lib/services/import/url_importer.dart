@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:novel_reader/core/import_exception.dart';
 import 'package:novel_reader/data/repositories/book_repository.dart';
 import 'package:novel_reader/models/book.dart';
 import 'package:novel_reader/services/import/local_file_importer.dart';
@@ -18,6 +19,9 @@ class UrlImporter {
   static const int maxFileBytes = 100 * 1024 * 1024; // 100MB
 
   final Dio _dio = Dio();
+
+  /// 连接/读取超时：首字节迟迟不来时不干等。
+  static const Duration _requestTimeout = Duration(seconds: 30);
 
   Future<Book> importFromUrl(
     String url, {
@@ -38,10 +42,30 @@ class UrlImporter {
     final Directory tempDir = await Directory.systemTemp.createTemp('novel_dl_');
     try {
       final String savePath = p.join(tempDir.path, 'download.$extension');
+      // 下载前先探 content-length，超限直接拒，不浪费流量
+      final Response<dynamic> head = await _dio.head<dynamic>(
+        url.trim(),
+        options: Options(
+          headers: <String, Object?>{HttpHeaders.userAgentHeader: 'novel-reader/0.1'},
+          receiveTimeout: _requestTimeout,
+          sendTimeout: _requestTimeout,
+        ),
+      );
+      final Object? declaredLength = head.headers.value(HttpHeaders.contentLengthHeader);
+      final int? declared =
+          declaredLength is String ? int.tryParse(declaredLength) : null;
+      if (declared != null && declared > maxFileBytes) {
+        throw const ImportException('文件超过 100MB 上限');
+      }
+
       await _dio.download(
         url.trim(),
         savePath,
-        options: Options(headers: <String, Object?>{HttpHeaders.userAgentHeader: 'novel-reader/0.1'}),
+        options: Options(
+          headers: <String, Object?>{HttpHeaders.userAgentHeader: 'novel-reader/0.1'},
+          receiveTimeout: _requestTimeout,
+          sendTimeout: _requestTimeout,
+        ),
         onReceiveProgress: onProgress,
       );
       final int size = await File(savePath).length();

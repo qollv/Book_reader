@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:novel_reader/models/reader_settings.dart';
-import 'package:novel_reader/ui/theme/reading_palettes.dart';
+import 'package:novel_reader/models/reading_palette.dart';
 
 /// 解析最终主题模式。
 ///

@@ -44,16 +44,16 @@ class Book {
 
   static Book fromRow(Map<String, Object?> row) {
     return Book(
-      id: row['id'] as String,
-      title: row['title'] as String,
-      author: row['author'] as String,
-      format: row['format'] as String,
-      contentPath: row['content_path'] as String,
-      chapterCount: row['chapter_count'] as int,
-      totalChars: row['total_chars'] as int,
-      fileSize: row['file_size'] as int,
-      createdAt: row['created_at'] as int,
-      updatedAt: row['updated_at'] as int,
+      id: row['id'] as String? ?? '',
+      title: row['title'] as String? ?? '',
+      author: row['author'] as String? ?? '',
+      format: row['format'] as String? ?? '',
+      contentPath: row['content_path'] as String? ?? '',
+      chapterCount: (row['chapter_count'] as num?)?.toInt() ?? 0,
+      totalChars: (row['total_chars'] as num?)?.toInt() ?? 0,
+      fileSize: (row['file_size'] as num?)?.toInt() ?? 0,
+      createdAt: (row['created_at'] as num?)?.toInt() ?? 0,
+      updatedAt: (row['updated_at'] as num?)?.toInt() ?? 0,
     );
   }
 }

@@ -1,3 +1,4 @@
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 
@@ -18,8 +19,11 @@ class ReaderRepository {
   final ChapterDao _chapterDao;
   final ProgressDao _progressDao;
 
-  // 分页结果缓存：key = bookId|chapterIndex|排版参数指纹
-  final Map<String, List<ReaderPage>> _pageCache = <String, List<ReaderPage>>{};
+  // 分页结果 LRU 缓存：key = bookId|chapterIndex|排版参数指纹。
+  // 排版参数每变一次就会为每章产生新 key，必须有上限，否则无界增长。
+  final LinkedHashMap<String, List<ReaderPage>> _pageCache =
+      LinkedHashMap<String, List<ReaderPage>>();
+  static const int _cacheCapacity = 12;
 
   Future<List<Chapter>> loadChapters(String bookId) {
     return _chapterDao.findByBook(bookId);
@@ -55,12 +59,17 @@ class ReaderRepository {
     required PaginationConfig config,
   }) async {
     final String key = '$bookId|$chapterIndex|${config.cacheKey}';
-    final List<ReaderPage>? cached = _pageCache[key];
+    // LRU：命中后移到尾部，超出容量淘汰最久未用
+    final List<ReaderPage>? cached = _pageCache.remove(key);
     if (cached != null) {
+      _pageCache[key] = cached;
       return cached;
     }
     final List<ReaderPage> pages = Paginator().paginate(blocks, config);
     _pageCache[key] = pages;
+    if (_pageCache.length > _cacheCapacity) {
+      _pageCache.remove(_pageCache.keys.first);
+    }
     return pages;
   }
 

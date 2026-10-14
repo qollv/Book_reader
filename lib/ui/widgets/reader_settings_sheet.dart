@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 
 import 'package:novel_reader/models/reader_settings.dart';
 import 'package:novel_reader/state/settings_controller.dart';
-import 'package:novel_reader/ui/theme/reading_palettes.dart';
+import 'package:novel_reader/models/reading_palette.dart';
 
 /// 阅读设置面板：主题、配色、字体、字号、行距、页边距、翻页方式。
 class ReaderSettingsSheet extends StatelessWidget {
@@ -68,8 +68,7 @@ class ReaderSettingsSheet extends StatelessWidget {
             SegmentedButton<String>(
               segments: const <ButtonSegment<String>>[
                 ButtonSegment<String>(value: 'system', label: Text('系统')),
-                ButtonSegment<String>(value: 'serif', label: Text('宋体')),
-                ButtonSegment<String>(value: 'kai', label: Text('楷体')),
+                ButtonSegment<String>(value: 'serif', label: Text('衬线')),
               ],
               selected: <String>{settings.fontFamily},
               onSelectionChanged: (Set<String> selection) =>

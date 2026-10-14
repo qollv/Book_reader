@@ -1,5 +1,9 @@
-import 'package:flutter/material.dart';
+import 'dart:async';
 
+import 'package:flutter/material.dart';
+import 'package:uuid/uuid.dart';
+
+import 'package:novel_reader/core/import_exception.dart';
 import 'package:novel_reader/core/parsers/parsed_book.dart';
 import 'package:novel_reader/core/pagination/page_line.dart';
 import 'package:novel_reader/core/pagination/paginator.dart';
@@ -39,6 +43,7 @@ class ReaderController extends ChangeNotifier {
   int _pageIndex = 0;
   bool _isLoading = false;
   String? _error;
+  Timer? _progressTimer;
 
   Book? get book => _book;
   List<Chapter> get chapters => _chapters;
@@ -82,11 +87,18 @@ class ReaderController extends ChangeNotifier {
   Future<void> openBook(String bookId) async {
     _isLoading = true;
     _error = null;
+    // 先清空上一本书的状态，避免打开失败时残留旧内容
+    _book = null;
+    _chapters = <Chapter>[];
+    _blocks = <ParagraphBlock>[];
+    _pages = <ReaderPage>[const ReaderPage(index: 0, lines: <PageLine>[])];
+    _chapterIndex = 0;
+    _pageIndex = 0;
     notifyListeners();
     try {
       final Book? book = await _bookDao.findById(bookId);
       if (book == null) {
-        _error = '书籍不存在';
+        _error = '书籍不存在或已被删除';
         return;
       }
       _book = book;
@@ -99,6 +111,8 @@ class ReaderController extends ChangeNotifier {
       } else {
         await _openChapter(0, anchor: null);
       }
+    } catch (error) {
+      _error = '打开失败：${error is ImportException ? error.message : error}';
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -129,7 +143,7 @@ class ReaderController extends ChangeNotifier {
     }
     _pageIndex = index;
     notifyListeners();
-    await _persistProgress();
+    _schedulePersistProgress();
   }
 
   Future<void> nextChapter() async {
@@ -164,7 +178,7 @@ class ReaderController extends ChangeNotifier {
     }
     _pageIndex = findPageForAnchor(_pages, paragraphIndex, lineIndex);
     notifyListeners();
-    await _persistProgress();
+    _schedulePersistProgress();
   }
 
   Future<void> toggleBookmark() async {
@@ -183,7 +197,7 @@ class ReaderController extends ChangeNotifier {
       }
     } else {
       await _annotationRepository.addBookmark(Bookmark(
-        id: DateTime.now().microsecondsSinceEpoch.toString(),
+        id: const Uuid().v4(),
         bookId: _book!.id,
         chapterIndex: _chapterIndex,
         paragraphIndex: first.paragraphIndex,
@@ -205,7 +219,7 @@ class ReaderController extends ChangeNotifier {
     final PageLine first = page.lines.first;
     final int now = DateTime.now().millisecondsSinceEpoch;
     await _annotationRepository.addNote(ReadingNote(
-      id: now.toString(),
+      id: const Uuid().v4(),
       bookId: _book!.id,
       chapterIndex: _chapterIndex,
       paragraphIndex: first.paragraphIndex,
@@ -257,6 +271,9 @@ class ReaderController extends ChangeNotifier {
       _pageIndex = findPageForAnchor(_pages, anchor.paragraphIndex, anchor.lineIndex);
       notifyListeners();
     }
+    // 切章是自然的落库点：取消挂起的防抖，立即写一次
+    _progressTimer?.cancel();
+    _progressTimer = null;
     await _persistProgress();
   }
 
@@ -285,6 +302,22 @@ class ReaderController extends ChangeNotifier {
     _bookmarks = await _annotationRepository.listBookmarks(_book!.id);
     _notes = await _annotationRepository.listNotes(_book!.id);
     notifyListeners();
+  }
+
+  /// 进度写库防抖：连续翻页/拖滑块只保留最后一次，300ms 后落库。
+  void _schedulePersistProgress() {
+    _progressTimer?.cancel();
+    _progressTimer = Timer(const Duration(milliseconds: 300), () {
+      _progressTimer = null;
+      _persistProgress();
+    });
+  }
+
+  @override
+  void dispose() {
+    _progressTimer?.cancel();
+    _persistProgress(); // 退出阅读器前把最后位置写掉
+    super.dispose();
   }
 
   Future<void> _persistProgress() async {

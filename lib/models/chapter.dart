@@ -26,11 +26,11 @@ class Chapter {
 
   static Chapter fromRow(Map<String, Object?> row) {
     return Chapter(
-      bookId: row['book_id'] as String,
-      index: row['chapter_index'] as int,
-      title: row['title'] as String,
-      paragraphStart: row['paragraph_start'] as int,
-      paragraphEnd: row['paragraph_end'] as int,
+      bookId: row['book_id'] as String? ?? '',
+      index: (row['chapter_index'] as num?)?.toInt() ?? 0,
+      title: row['title'] as String? ?? '',
+      paragraphStart: (row['paragraph_start'] as num?)?.toInt() ?? 0,
+      paragraphEnd: (row['paragraph_end'] as num?)?.toInt() ?? 0,
     );
   }
 }

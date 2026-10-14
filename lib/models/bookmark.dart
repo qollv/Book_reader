@@ -38,15 +38,15 @@ class Bookmark {
 
   static Bookmark fromRow(Map<String, Object?> row) {
     return Bookmark(
-      id: row['id'] as String,
-      bookId: row['book_id'] as String,
-      chapterIndex: row['chapter_index'] as int,
-      paragraphIndex: row['paragraph_index'] as int,
-      lineIndex: row['line_index'] as int,
-      chapterTitle: row['chapter_title'] as String,
-      excerpt: row['excerpt'] as String,
-      comment: row['comment'] as String,
-      createdAt: row['created_at'] as int,
+      id: row['id'] as String? ?? '',
+      bookId: row['book_id'] as String? ?? '',
+      chapterIndex: (row['chapter_index'] as num?)?.toInt() ?? 0,
+      paragraphIndex: (row['paragraph_index'] as num?)?.toInt() ?? 0,
+      lineIndex: (row['line_index'] as num?)?.toInt() ?? 0,
+      chapterTitle: row['chapter_title'] as String? ?? '',
+      excerpt: row['excerpt'] as String? ?? '',
+      comment: row['comment'] as String? ?? '',
+      createdAt: (row['created_at'] as num?)?.toInt() ?? 0,
     );
   }
 }
