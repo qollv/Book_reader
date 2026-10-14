@@ -11,17 +11,18 @@ import 'package:novel_reader/state/reader_controller.dart';
 import 'package:novel_reader/state/settings_controller.dart';
 import 'package:novel_reader/ui/pages/annotations_page.dart';
 import 'package:novel_reader/ui/theme/reading_palettes.dart';
+import 'package:novel_reader/ui/theme/theme_mode_resolver.dart';
 import 'package:novel_reader/ui/widgets/reader_settings_sheet.dart';
 
 /// 阅读器页面：分页渲染 + 点按呼出菜单 + 章节/进度/书签/笔记入口。
-class ReaderPage extends StatefulWidget {
-  const ReaderPage({super.key});
+class ReaderScreen extends StatefulWidget {
+  const ReaderScreen({super.key});
 
   @override
-  State<ReaderPage> createState() => _ReaderPageState();
+  State<ReaderScreen> createState() => _ReaderScreenState();
 }
 
-class _ReaderPageState extends State<ReaderPage> {
+class _ReaderScreenState extends State<ReaderScreen> {
   late final PageController _pageController;
   bool _menuVisible = false;
   String _lastConfigKey = '';
@@ -398,7 +399,7 @@ class _ReaderBottomBar extends StatelessWidget {
                     Text('${pageIndex + 1}/$pageCount', style: TextStyle(color: palette.secondary, fontSize: 12)),
                     Expanded(
                       child: Slider(
-                        value: math.min(pageIndex, sliderMax).toDouble(),
+                        value: pageIndex.toDouble().clamp(0.0, sliderMax),
                         max: sliderMax,
                         onChanged: (double value) => onPageChanged(value.round()),
                       ),

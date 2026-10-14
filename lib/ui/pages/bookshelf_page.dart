@@ -6,7 +6,7 @@ import 'package:novel_reader/services/sync/sync_service.dart';
 import 'package:novel_reader/state/bookshelf_controller.dart';
 import 'package:novel_reader/state/reader_controller.dart';
 import 'package:novel_reader/state/settings_controller.dart';
-import 'package:novel_reader/ui/pages/reader_page.dart';
+import 'package:novel_reader/ui/pages/reader_screen.dart';
 import 'package:novel_reader/ui/theme/reading_palettes.dart';
 import 'package:novel_reader/ui/widgets/import_options_sheet.dart';
 
@@ -66,7 +66,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
   void _openBook(String bookId) {
     context.read<ReaderController>().openBook(bookId);
     Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => const ReaderPage(),
+      builder: (_) => const ReaderScreen(),
     ));
   }
 

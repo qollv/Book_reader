@@ -9,15 +9,7 @@ import 'package:novel_reader/state/reader_controller.dart';
 import 'package:novel_reader/state/settings_controller.dart';
 import 'package:novel_reader/ui/pages/bookshelf_page.dart';
 import 'package:novel_reader/ui/theme/reading_palettes.dart';
-
-/// 夜间配色强制走深色主题，避免「系统日间 + 夜间配色」的违和组合。
-ThemeMode resolveThemeMode(ReaderSettings settings) {
-  if (settings.themeMode == ThemeMode.dark || settings.themeMode == ThemeMode.light) {
-    return settings.themeMode;
-  }
-  final bool paletteIsDark = ReadingPalette.all[settings.paletteIndex].isDark;
-  return paletteIsDark ? ThemeMode.dark : ThemeMode.system;
-}
+import 'package:novel_reader/ui/theme/theme_mode_resolver.dart';
 
 class NovelReaderApp extends StatelessWidget {
   const NovelReaderApp({

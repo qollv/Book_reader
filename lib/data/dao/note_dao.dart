@@ -25,6 +25,19 @@ class NoteDao {
     await _db.delete('notes', where: 'id = ?', whereArgs: <Object?>[noteId]);
   }
 
+  Future<ReadingNote?> findById(String noteId) async {
+    final List<Map<String, Object?>> rows = await _db.query(
+      'notes',
+      where: 'id = ?',
+      whereArgs: <Object?>[noteId],
+      limit: 1,
+    );
+    if (rows.isEmpty) {
+      return null;
+    }
+    return ReadingNote.fromRow(rows.first);
+  }
+
   Future<void> deleteByBook(String bookId) async {
     await _db.delete('notes', where: 'book_id = ?', whereArgs: <Object?>[bookId]);
   }

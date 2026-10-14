@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:novel_reader/data/dao/bookmark_dao.dart';
 import 'package:novel_reader/data/dao/note_dao.dart';
 import 'package:novel_reader/data/dao/progress_dao.dart';
@@ -136,21 +134,4 @@ class ProgressSyncService {
     }
     return false;
   }
-}
-
-/// 设备 ID：首次生成后持久化（SharedPreferences 由上层注入）。
-String extractDeviceId(String raw) {
-  if (raw.isEmpty) {
-    return 'unknown-device';
-  }
-  try {
-    final Map<String, Object?> json = jsonDecode(raw) as Map<String, Object?>;
-    final Object? id = json['device_id'];
-    if (id is String && id.isNotEmpty) {
-      return id;
-    }
-  } on FormatException {
-    return raw;
-  }
-  return 'unknown-device';
 }

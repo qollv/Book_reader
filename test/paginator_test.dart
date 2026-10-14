@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:novel_reader/core/parsers/parsed_book.dart';
 import 'package:novel_reader/core/pagination/page_line.dart';

@@ -6,6 +6,7 @@ import 'package:novel_reader/data/repositories/book_repository.dart';
 import 'package:novel_reader/models/book.dart';
 import 'package:novel_reader/models/reading_progress.dart';
 import 'package:novel_reader/services/import/book_importer.dart';
+import 'package:novel_reader/services/import/local_file_importer.dart';
 
 /// 书籍 + 进度 的合并视图，书架列表直接用。
 class BookshelfItem {
@@ -68,7 +69,7 @@ class BookshelfController extends ChangeNotifier {
       }
       return book;
     } catch (error) {
-      _importError = error.toString();
+      _importError = _friendlyError(error);
       return null;
     } finally {
       _isImporting = false;
@@ -94,12 +95,20 @@ class BookshelfController extends ChangeNotifier {
       await load();
       return book;
     } catch (error) {
-      _importError = error.toString();
+      _importError = _friendlyError(error);
       return null;
     } finally {
       _isImporting = false;
       notifyListeners();
     }
+  }
+
+  /// 导入异常带中文可读信息，其余异常按原样展示。
+  String _friendlyError(Object error) {
+    if (error is ImportException) {
+      return error.message;
+    }
+    return error.toString();
   }
 
   Future<void> deleteBook(String bookId) async {

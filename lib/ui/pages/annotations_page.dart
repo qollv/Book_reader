@@ -56,7 +56,7 @@ class _BookmarkList extends StatelessWidget {
           subtitle: Text('${bookmark.chapterTitle} · ${_formatTime(bookmark.createdAt)}'),
           trailing: IconButton(
             icon: const Icon(Icons.delete_outline),
-            onPressed: () => reader.deleteBookmarkPublic(bookmark.id),
+            onPressed: () => reader.deleteBookmark(bookmark.id),
           ),
           onTap: () => _jump(context, bookmark),
         );
