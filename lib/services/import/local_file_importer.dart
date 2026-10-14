@@ -23,14 +23,14 @@ class LocalFileImporter {
 
   /// 返回 null 表示用户取消了选择。
   Future<Book?> pickAndImport() async {
-    final FilePickerResult? result = await FilePicker.platform.pickFiles(
+    final PlatformFile? file = await FilePicker.pickFile(
+      type: FileType.custom,
       allowedExtensions: supportedExtensions,
-      withData: false,
     );
-    if (result == null || result.files.isEmpty) {
+    if (file == null) {
       return null;
     }
-    final String? path = result.files.single.path;
+    final String? path = file.path;
     if (path == null) {
       throw const ImportException('无法读取所选文件');
     }

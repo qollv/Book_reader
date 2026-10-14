@@ -24,3 +24,6 @@ ios/Flutter/Flutter.podspec
 # 系统与编辑器
 .DS_Store
 *.log
+
+# 构建产物（APK 等）
+dist/
