@@ -38,7 +38,6 @@ class ReaderController extends ChangeNotifier {
   int _chapterIndex = 0;
   int _pageIndex = 0;
   bool _isLoading = false;
-  String _lastConfigKey = '';
   String? _error;
 
   Book? get book => _book;

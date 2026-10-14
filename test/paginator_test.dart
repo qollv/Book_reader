@@ -5,7 +5,7 @@ import 'package:novel_reader/core/pagination/paginator.dart';
 
 List<ParagraphBlock> _longParagraphs(int count, int charsEach) {
   return List<ParagraphBlock>.generate(count, (int i) {
-    return ParagraphBlock(text: '第${i}段' + '内容' * charsEach, kind: ParagraphKind.paragraph);
+    return ParagraphBlock(text: '第$i段${'内容' * charsEach}', kind: ParagraphKind.paragraph);
   });
 }
 
@@ -56,10 +56,8 @@ void main() {
     final PaginationConfig config = smallConfig();
     final List<ReaderPage> pages = Paginator().paginate(blocks, config);
     for (ReaderPage page in pages) {
-      double height = 0;
-      for (PageLine line in page.lines) {
-        height += config.lineHeightPx;
-      }
+      // 每页按行数 * 行高估算，允许一行高度的测量误差
+      final double height = page.lines.length * config.lineHeightPx;
       expect(height, lessThanOrEqualTo(config.availableHeight + config.lineHeightPx));
     }
   });

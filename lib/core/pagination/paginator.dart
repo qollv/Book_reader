@@ -125,6 +125,7 @@ class Paginator {
     }
   }
 
+  /// 单段测行：返回每行文本与高度。
   List<_MeasuredLine> _measureBlock(ParagraphBlock block, PaginationConfig config) {
     final TextStyle style = _styleFor(block, config);
     // 统一按减去首行缩进的宽度测量，缩进渲染后任何一行都不会溢出
@@ -137,10 +138,20 @@ class Paginator {
     painter.layout(maxWidth: maxWidth);
     final List<LineMetrics> metrics = painter.computeLineMetrics();
     final List<_MeasuredLine> lines = <_MeasuredLine>[];
-    for (LineMetrics metric in metrics) {
-      final int start = math.min(math.max(metric.start, 0), block.text.length);
-      final int end = math.min(math.max(metric.end, start), block.text.length);
-      lines.add(_MeasuredLine(text: block.text.substring(start, end), height: metric.height));
+
+    // 新版 LineMetrics 不再暴露 start/end，用 getLineBoundary 逐行取区间
+    int start = 0;
+    for (int i = 0; i < metrics.length && start < block.text.length; i++) {
+      final TextRange boundary = painter.getLineBoundary(TextPosition(offset: start));
+      int end = boundary.end;
+      if (end <= start) {
+        end = start + 1; // 防御零宽行（如纯空白）导致死循环
+      }
+      if (end > block.text.length) {
+        end = block.text.length;
+      }
+      lines.add(_MeasuredLine(text: block.text.substring(start, end), height: metrics[i].height));
+      start = end;
     }
     painter.dispose();
     return lines;

@@ -23,19 +23,24 @@ class ReaderScreen extends StatefulWidget {
 }
 
 class _ReaderScreenState extends State<ReaderScreen> {
-  late final PageController _pageController;
+  PageController? _pageController;
+  int _controllerChapter = -1;
   bool _menuVisible = false;
   String _lastConfigKey = '';
 
-  @override
-  void initState() {
-    super.initState();
-    _pageController = PageController();
+  /// 章节切换时新建控制器落到目标页；同章复用，保持滚动位置。
+  PageController _controllerFor(int chapterIndex, int pageIndex) {
+    if (_pageController == null || _controllerChapter != chapterIndex) {
+      _pageController?.dispose();
+      _pageController = PageController(initialPage: pageIndex);
+      _controllerChapter = chapterIndex;
+    }
+    return _pageController!;
   }
 
   @override
   void dispose() {
-    _pageController.dispose();
+    _pageController?.dispose();
     super.dispose();
   }
 
@@ -139,12 +144,13 @@ class _ReaderScreenState extends State<ReaderScreen> {
           return;
         }
         reader.repaginate(config).then((_) {
-          if (!mounted || !_pageController.hasClients) {
+          final PageController? controller = _pageController;
+          if (!mounted || controller == null || !controller.hasClients) {
             return;
           }
           final int target = reader.pageIndex;
-          if ((_pageController.page ?? target).round() != target) {
-            _pageController.jumpToPage(target);
+          if ((controller.page ?? target).round() != target) {
+            controller.jumpToPage(target);
           }
         });
       });
@@ -163,8 +169,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
             else if (page != null)
               PageView.builder(
                 key: ValueKey<int>(reader.chapterIndex),
-                controller: _pageController,
-                initialPage: math.max(0, math.min(reader.pageIndex, reader.pages.length - 1)),
+                controller: _controllerFor(
+                  reader.chapterIndex,
+                  math.max(0, math.min(reader.pageIndex, reader.pages.length - 1)),
+                ),
                 scrollDirection: settings.pageAnimation == PageAnimation.scroll
                     ? Axis.vertical
                     : Axis.horizontal,
@@ -276,7 +284,7 @@ class _PageContentView extends StatelessWidget {
       return Container(
         margin: EdgeInsets.symmetric(vertical: baseSize * 0.2),
         padding: EdgeInsets.all(baseSize * 0.5),
-        color: palette.secondary.withOpacity(0.12),
+        color: palette.secondary.withValues(alpha: 0.12),
         child: Text(line.text, style: style.copyWith(fontFamily: 'monospace')),
       );
     }
@@ -322,7 +330,7 @@ class _ReaderTopBar extends StatelessWidget {
       left: 0,
       right: 0,
       child: Container(
-        color: palette.background.withOpacity(0.96),
+        color: palette.background.withValues(alpha: 0.96),
         child: SafeArea(
           child: SizedBox(
             height: 48,
@@ -387,7 +395,7 @@ class _ReaderBottomBar extends StatelessWidget {
       right: 0,
       bottom: 0,
       child: Container(
-        color: palette.background.withOpacity(0.96),
+        color: palette.background.withValues(alpha: 0.96),
         child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),

@@ -59,7 +59,8 @@ class MarkdownParser implements BookParser {
       }
       final RegExpMatch? bullet = _bullet.firstMatch(trimmed);
       if (bullet != null) {
-        current.add(ParagraphBlock(text: '• ' + stripInline(bullet.group(1)!), kind: ParagraphKind.paragraph));
+        current.add(ParagraphBlock(
+            text: '• ${stripInline(bullet.group(1)!)}', kind: ParagraphKind.paragraph));
         continue;
       }
       final RegExpMatch? ordered = _ordered.firstMatch(trimmed);
@@ -106,12 +107,13 @@ class MarkdownParser implements BookParser {
   }
 
   /// 剥离行内 Markdown 语法，只留纯文本。
+  /// 替换串用原始字符串：$1 是正则反向引用，不能被 Dart 当成插值。
   static String stripInline(String text) {
-    String result = _image.replaceAll(text, '$1');
-    result = _link.replaceAll(result, '$1');
-    result = _bold.replaceAll(result, '$1');
-    result = _italic.replaceAll(result, '$1$2');
-    result = _code.replaceAll(result, '$1');
+    String result = text.replaceAll(_image, r'$1');
+    result = result.replaceAll(_link, r'$1');
+    result = result.replaceAll(_bold, r'$1');
+    result = result.replaceAll(_italic, r'$1$2');
+    result = result.replaceAll(_code, r'$1');
     return result.trim();
   }
 }

@@ -189,7 +189,7 @@ class _LanPanelState extends State<_LanPanel> {
 Future<String?> localIpv4() async {
   try {
     final List<NetworkInterface> interfaces =
-        await NetworkInterface.list(type: InternetAddressType.ipv4, includeLoopback: false);
+        await NetworkInterface.list(type: InternetAddressType.IPv4, includeLoopback: false);
     for (NetworkInterface iface in interfaces) {
       for (InternetAddress addr in iface.addresses) {
         return addr.address;
