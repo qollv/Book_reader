@@ -2,6 +2,8 @@
 
 Flutter 跨平台小说阅读软件：本地导入 txt / md / docx 并智能排版，支持 URL / 局域网远程导入，书架管理、进度同步、书签笔记、夜间模式与字体调整。
 
+> **下载调试版 APK**：[Releases → v0.1.0-debug](https://github.com/qollv/Book_reader/releases/tag/v0.1.0-debug)（153MB，含全部 ABI；传到手机点击安装即可）
+
 完整设计方案见 [docs/项目计划书.md](docs/项目计划书.md)。
 
 ## 功能一览
