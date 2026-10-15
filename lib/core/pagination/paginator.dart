@@ -143,11 +143,25 @@ class Paginator {
     }
   }
 
+  /// 测量宽度上留的安全余量（逻辑像素）。
+  ///
+  /// 分页器必须**高估**高度，绝不能低估：只要它认为某行放得下、渲染时却换行了，
+  /// 页面就会溢出。
+  ///
+  /// 这不是理论担忧：字号放大到 26 时，一段 10 个汉字的文本宽度正好等于可用
+  /// 宽度，分页测量判定为 1 行，渲染出来却是 2 行（渲染端的缩进是
+  /// `fontSize * 2`，参与浮点运算后宽度会差零点几像素）。统一减掉 1 像素，
+  /// 把「恰好等于」的边界情况推到安全一侧。
+  static const double _measurementSafetyInsetPx = 1.0;
+
   /// 单段测行：返回每行文本与高度。
   List<_MeasuredLine> _measureBlock(ParagraphBlock block, PaginationConfig config) {
     final TextStyle style = _styleFor(block, config);
     // 统一按减去首行缩进的宽度测量，缩进渲染后任何一行都不会溢出
-    final double maxWidth = math.max(config.contentWidth - config.firstLineIndentPx, 1);
+    final double maxWidth = math.max(
+      config.contentWidth - config.firstLineIndentPx - _measurementSafetyInsetPx,
+      1,
+    );
 
     final TextPainter painter = TextPainter(
       textDirection: TextDirection.ltr,
@@ -156,23 +170,47 @@ class Paginator {
     painter.layout(maxWidth: maxWidth);
     final List<LineMetrics> metrics = painter.computeLineMetrics();
     final List<_MeasuredLine> lines = <_MeasuredLine>[];
+    final String text = block.text;
 
     // 新版 LineMetrics 不再暴露 start/end，用 getLineBoundary 逐行取区间
     int start = 0;
-    for (int i = 0; i < metrics.length && start < block.text.length; i++) {
-      final TextRange boundary = painter.getLineBoundary(TextPosition(offset: start));
-      int end = boundary.end;
-      if (end <= start) {
-        end = start + 1; // 防御零宽行（如纯空白）导致死循环
+    for (int i = 0; i < metrics.length && start < text.length; i++) {
+      int end = _lineBoundaryEnd(painter, start, text.length);
+      // 跳过「伪行」。
+      //
+      // `getLineBoundary` 在 offset 正好落在换行符上时，会把换行符本身当成
+      // 一行返回（例如 `"甲\n乙"` 会切出 `"甲"`、`"\n"`、`"乙"` 三段）。
+      // 这带来两个后果，且都是单元测试不容易发现的：
+      //   1. 伪行是独立的一段，渲染时同样占一整行高度，页面凭空变长；
+      //   2. 循环次数受 `metrics.length`（真实可视行数）限制，伪行会把
+      //      真正的最后一行**挤出循环** —— 表现为正文丢字。
+      while (end < text.length && text.substring(start, end).trim().isEmpty) {
+        start = end;
+        end = _lineBoundaryEnd(painter, start, text.length);
       }
-      if (end > block.text.length) {
-        end = block.text.length;
+      if (start >= text.length) {
+        break;
       }
-      lines.add(_MeasuredLine(text: block.text.substring(start, end), height: metrics[i].height));
+      final String piece = text.substring(start, end);
       start = end;
+      if (piece.trim().isEmpty) {
+        // 空行不占页面高度（段间距已经负责分隔，不需要再空一行）
+        continue;
+      }
+      lines.add(_MeasuredLine(text: piece, height: metrics[i].height));
     }
     painter.dispose();
     return lines;
+  }
+
+  /// 取 [start] 所在行的结束偏移，并保证一定向前推进（避免零宽行死循环）。
+  int _lineBoundaryEnd(TextPainter painter, int start, int textLength) {
+    final TextRange boundary = painter.getLineBoundary(TextPosition(offset: start));
+    int end = boundary.end;
+    if (end <= start) {
+      end = start + 1; // 防御零宽行（如纯空白）导致死循环
+    }
+    return end > textLength ? textLength : end;
   }
 
   TextStyle _styleFor(ParagraphBlock block, PaginationConfig config) {
@@ -180,7 +218,13 @@ class Paginator {
       fontSize: BlockMetrics.fontSizeFor(block.kind, block.headingLevel, config.fontSize),
       height: config.lineHeight,
       color: config.textColor,
-      fontFamily: config.fontFamily == 'system' ? null : config.fontFamily,
+      // 代码块在渲染端被换成等宽字体（`_buildPiece` 里的
+      // `style.copyWith(fontFamily: 'monospace')`），测量必须同源：
+      // 等宽与比例字体的字宽不同，用比例字体量、用等宽字体画，
+      // 就会出现「量出来放得下、画出来换行」。
+      fontFamily: block.kind == ParagraphKind.code
+          ? 'monospace'
+          : (config.fontFamily == 'system' ? null : config.fontFamily),
     );
   }
 
