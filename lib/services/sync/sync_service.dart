@@ -31,7 +31,8 @@ class SyncPayload {
 
   static SyncPayload fromJson(Map<String, Object?> json) {
     return SyncPayload(
-      deviceId: json['device_id'] as String? ?? 'unknown-device',
+      // 对端可能是旧版本/第三方实现，device_id 不保证是 String
+      deviceId: json['device_id'] is String ? json['device_id'] as String : 'unknown-device',
       progressList: _rows(json['progress']).map(ReadingProgress.fromRow).toList(),
       bookmarks: _rows(json['bookmarks']).map(Bookmark.fromRow).toList(),
       notes: _rows(json['notes']).map(ReadingNote.fromRow).toList(),
@@ -73,45 +74,48 @@ class ProgressSyncService {
   final BookmarkDao _bookmarkDao;
   final NoteDao _noteDao;
 
-  /// 合并策略 last-write-wins：逐条按 updated_at 取较新者。
+  /// 合并策略 last-write-wins：进度/书签/笔记逐条按 updated_at 取较新者。
   /// 删除操作不做传播（防误删他端数据），记录在案为已知限制。
   /// transport 每次调用时传入，便于用户在设置里切换/配置通道。
+  ///
+  /// 首同步自举：对端无数据（download 返回 null）时也上传本地全量——
+  /// 否则两台新设备互相等对方先推，同步永远无法启动。
   Future<SyncReport> sync(String deviceId, SyncTransport transport) async {
     final SyncPayload? remote = await transport.download();
-    if (remote == null) {
-      return const SyncReport(pulledProgress: 0, pulledBookmarks: 0, pulledNotes: 0);
-    }
 
     int pulledProgress = 0;
     int pulledBookmarks = 0;
     int pulledNotes = 0;
 
-    for (ReadingProgress remoteProgress in remote.progressList) {
-      final ReadingProgress? local = await _progressDao.findByBook(remoteProgress.bookId);
-      if (local == null || remoteProgress.updatedAt > local.updatedAt) {
-        await _progressDao.upsert(remoteProgress);
-        pulledProgress++;
+    if (remote != null) {
+      for (ReadingProgress remoteProgress in remote.progressList) {
+        final ReadingProgress? local = await _progressDao.findByBook(remoteProgress.bookId);
+        if (local == null || remoteProgress.updatedAt > local.updatedAt) {
+          await _progressDao.upsert(remoteProgress);
+          pulledProgress++;
+        }
       }
-    }
-    // 一次性取出本地书签 ID 集合，避免逐条全表查询
-    final Set<String> localBookmarkIds = <String>{
-      for (Bookmark bookmark in await _bookmarkDao.findAll()) bookmark.id,
-    };
-    for (Bookmark remoteBookmark in remote.bookmarks) {
-      if (!localBookmarkIds.contains(remoteBookmark.id)) {
-        await _bookmarkDao.insert(remoteBookmark);
-        localBookmarkIds.add(remoteBookmark.id);
-        pulledBookmarks++;
+      // 一次性取出本地书签，合并与上传都基于这份快照
+      final Map<String, Bookmark> localBookmarks = <String, Bookmark>{
+        for (Bookmark bookmark in await _bookmarkDao.findAll()) bookmark.id: bookmark,
+      };
+      for (Bookmark remoteBookmark in remote.bookmarks) {
+        final Bookmark? local = localBookmarks[remoteBookmark.id];
+        if (local == null || remoteBookmark.updatedAt > local.updatedAt) {
+          await _bookmarkDao.insert(remoteBookmark);
+          localBookmarks[remoteBookmark.id] = remoteBookmark;
+          pulledBookmarks++;
+        }
       }
-    }
-    for (ReadingNote remoteNote in remote.notes) {
-      final ReadingNote? local = await _noteDao.findById(remoteNote.id);
-      if (local == null) {
-        await _noteDao.insert(remoteNote);
-        pulledNotes++;
-      } else if (remoteNote.updatedAt > local.updatedAt) {
-        await _noteDao.update(remoteNote);
-        pulledNotes++;
+      for (ReadingNote remoteNote in remote.notes) {
+        final ReadingNote? local = await _noteDao.findById(remoteNote.id);
+        if (local == null) {
+          await _noteDao.insert(remoteNote);
+          pulledNotes++;
+        } else if (remoteNote.updatedAt > local.updatedAt) {
+          await _noteDao.update(remoteNote);
+          pulledNotes++;
+        }
       }
     }
 

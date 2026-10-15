@@ -10,6 +10,7 @@ class Bookmark {
     required this.excerpt,
     required this.comment,
     required this.createdAt,
+    required this.updatedAt,
   });
 
   final String id;
@@ -21,6 +22,7 @@ class Bookmark {
   final String excerpt; // 锚点所在行的原文
   final String comment;
   final int createdAt;
+  final int updatedAt; // 与笔记对齐，供同步合并按 last-write-wins 取较新者
 
   Map<String, Object?> toRow() {
     return <String, Object?>{
@@ -33,20 +35,26 @@ class Bookmark {
       'excerpt': excerpt,
       'comment': comment,
       'created_at': createdAt,
+      'updated_at': updatedAt,
     };
   }
 
+  /// 对端同步数据/损坏库的字段类型不可信：is 判断 + 默认值，
+  /// as T? 只防 null 不防类型错误（String 递给 num 字段会抛 TypeError）。
   static Bookmark fromRow(Map<String, Object?> row) {
     return Bookmark(
       id: row['id'] as String? ?? '',
       bookId: row['book_id'] as String? ?? '',
-      chapterIndex: (row['chapter_index'] as num?)?.toInt() ?? 0,
-      paragraphIndex: (row['paragraph_index'] as num?)?.toInt() ?? 0,
-      lineIndex: (row['line_index'] as num?)?.toInt() ?? 0,
+      chapterIndex: _intOf(row['chapter_index']),
+      paragraphIndex: _intOf(row['paragraph_index']),
+      lineIndex: _intOf(row['line_index']),
       chapterTitle: row['chapter_title'] as String? ?? '',
       excerpt: row['excerpt'] as String? ?? '',
       comment: row['comment'] as String? ?? '',
-      createdAt: (row['created_at'] as num?)?.toInt() ?? 0,
+      createdAt: _intOf(row['created_at']),
+      updatedAt: _intOf(row['updated_at']),
     );
   }
+
+  static int _intOf(Object? value) => value is num ? value.toInt() : 0;
 }

@@ -41,15 +41,19 @@ class ReadingProgress {
     };
   }
 
+  /// 对端同步数据/损坏库的字段类型不可信：is 判断 + 默认值，
+  /// as T? 只防 null 不防类型错误（String 递给 num 字段会抛 TypeError）。
   static ReadingProgress fromRow(Map<String, Object?> row) {
     return ReadingProgress(
       bookId: row['book_id'] as String? ?? '',
-      chapterIndex: (row['chapter_index'] as num?)?.toInt() ?? 0,
-      paragraphIndex: (row['paragraph_index'] as num?)?.toInt() ?? 0,
-      lineIndex: (row['line_index'] as num?)?.toInt() ?? 0,
+      chapterIndex: _intOf(row['chapter_index']),
+      paragraphIndex: _intOf(row['paragraph_index']),
+      lineIndex: _intOf(row['line_index']),
       // 对端设备可能写 int 而非 double，统一 toDouble
-      percent: (row['percent'] as num?)?.toDouble() ?? 0,
-      updatedAt: (row['updated_at'] as num?)?.toInt() ?? 0,
+      percent: row['percent'] is num ? (row['percent'] as num).toDouble() : 0,
+      updatedAt: _intOf(row['updated_at']),
     );
   }
+
+  static int _intOf(Object? value) => value is num ? value.toInt() : 0;
 }

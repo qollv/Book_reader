@@ -11,7 +11,7 @@ class AppDatabase {
   static final AppDatabase instance = AppDatabase._();
 
   static const String _dbName = 'novel_reader.db';
-  static const int _dbVersion = 1;
+  static const int _dbVersion = 2;
 
   Database? _database;
 
@@ -32,8 +32,18 @@ class AppDatabase {
 
   /// 版本升级迁移：按顺序执行 DDL，绝不回滚式重建（用户数据无价）。
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    // v1 → v2 示例（实际有迁移时取消注释并补 DDL）：
-    // if (oldVersion < 2) { await db.execute('ALTER TABLE books ADD COLUMN cover_path TEXT'); }
+    if (oldVersion < 2) {
+      await migrateV1ToV2(db);
+    }
+  }
+
+  /// v1 → v2：书签增加 updated_at，合并策略与笔记对齐（last-write-wins）。
+  /// 旧书签无修改记录，默认 0 表示「从未更新」，对端更新即可覆盖。
+  /// 抽成静态方法供迁移测试直接调用。
+  static Future<void> migrateV1ToV2(Database db) async {
+    await db.execute(
+      'ALTER TABLE bookmarks ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0',
+    );
   }
 
   /// 降级（装回旧版 App）：保留数据，由旧版本代码自行兼容。
@@ -86,7 +96,8 @@ class AppDatabase {
         chapter_title TEXT NOT NULL,
         excerpt TEXT NOT NULL,
         comment TEXT NOT NULL,
-        created_at INTEGER NOT NULL
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL DEFAULT 0
       )
     ''');
     await db.execute('''

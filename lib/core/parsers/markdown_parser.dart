@@ -23,7 +23,9 @@ class MarkdownParser implements BookParser {
     final String raw = await readBookText(path);
     final List<String> lines = const LineSplitter().convert(raw);
 
-    final String title = guessTitle(lines, fileNameTitle(path));
+    // md 首行常是「# 书名」：剥离标题标记后再作为书名，
+    // 否则书架/目录会带上「# 」前缀
+    final String title = _stripHeadingPrefix(guessTitle(lines, fileNameTitle(path)));
     final List<String> body = _skipTitleHeading(lines, title);
 
     final List<ParsedChapter> chapters = <ParsedChapter>[];
@@ -78,6 +80,12 @@ class MarkdownParser implements BookParser {
       chapters.add(const ParsedChapter(title: '正文', blocks: <ParagraphBlock>[]));
     }
     return ParsedBook(title: title, author: '', chapters: chapters);
+  }
+
+  /// 去掉行首的 markdown 标题标记（# ~ ######），供书名使用。
+  String _stripHeadingPrefix(String title) {
+    final RegExpMatch? match = _heading.firstMatch(title.trim());
+    return match != null ? match.group(2)!.trim() : title.trim();
   }
 
   /// 收集 ``` 围栏代码块，返回围栏结束行的下标（未闭合则到文末）。

@@ -112,6 +112,13 @@ class ReaderController extends ChangeNotifier {
         await _openChapter(0, anchor: null);
       }
     } catch (error) {
+      // 失败时连已赋值的新书引用一起清掉，避免残留半开状态
+      _book = null;
+      _chapters = <Chapter>[];
+      _blocks = <ParagraphBlock>[];
+      _pages = <ReaderPage>[const ReaderPage(index: 0, lines: <PageLine>[])];
+      _chapterIndex = 0;
+      _pageIndex = 0;
       _error = '打开失败：${error is ImportException ? error.message : error}';
     } finally {
       _isLoading = false;
@@ -196,6 +203,7 @@ class ReaderController extends ChangeNotifier {
         }
       }
     } else {
+      final int now = DateTime.now().millisecondsSinceEpoch;
       await _annotationRepository.addBookmark(Bookmark(
         id: const Uuid().v4(),
         bookId: _book!.id,
@@ -205,7 +213,8 @@ class ReaderController extends ChangeNotifier {
         chapterTitle: _chapters[_chapterIndex].title,
         excerpt: first.text,
         comment: '',
-        createdAt: DateTime.now().millisecondsSinceEpoch,
+        createdAt: now,
+        updatedAt: now,
       ));
     }
     await _refreshAnnotations();
