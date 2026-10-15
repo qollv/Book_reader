@@ -5,9 +5,11 @@ import 'package:novel_reader/models/reader_settings.dart';
 import 'package:novel_reader/services/import/lan_transfer_server.dart';
 import 'package:novel_reader/services/sync/sync_service.dart';
 import 'package:novel_reader/state/bookshelf_controller.dart';
+import 'package:novel_reader/state/explore_controller.dart';
 import 'package:novel_reader/state/reader_controller.dart';
 import 'package:novel_reader/state/settings_controller.dart';
-import 'package:novel_reader/ui/pages/bookshelf_page.dart';
+import 'package:novel_reader/state/source_controller.dart';
+import 'package:novel_reader/ui/pages/home_shell.dart';
 import 'package:novel_reader/ui/theme/reading_palettes.dart';
 import 'package:novel_reader/ui/theme/theme_mode_resolver.dart';
 
@@ -19,6 +21,8 @@ class NovelReaderApp extends StatelessWidget {
     required this.readerController,
     required this.lanServer,
     required this.syncService,
+    required this.sourceController,
+    required this.exploreController,
   });
 
   final SettingsController settingsController;
@@ -26,6 +30,8 @@ class NovelReaderApp extends StatelessWidget {
   final ReaderController readerController;
   final LanTransferServer lanServer;
   final ProgressSyncService syncService;
+  final SourceController sourceController;
+  final ExploreController exploreController;
 
   @override
   Widget build(BuildContext context) {
@@ -34,6 +40,8 @@ class NovelReaderApp extends StatelessWidget {
         ChangeNotifierProvider<SettingsController>.value(value: settingsController),
         ChangeNotifierProvider<BookshelfController>.value(value: bookshelfController),
         ChangeNotifierProvider<ReaderController>.value(value: readerController),
+        ChangeNotifierProvider<SourceController>.value(value: sourceController),
+        ChangeNotifierProvider<ExploreController>.value(value: exploreController),
       ],
       child: MultiProvider(
         providers: <Provider<Object>>[
@@ -50,7 +58,7 @@ class NovelReaderApp extends StatelessWidget {
               themeMode: resolveThemeMode(settings),
               theme: _buildTheme(palette, false),
               darkTheme: _buildTheme(palette, true),
-              home: const BookshelfPage(),
+              home: const HomeShell(),
             );
           },
         ),

@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:novel_reader/core/parsers/book_file_guard.dart';
 import 'package:novel_reader/core/parsers/book_parser.dart';
 import 'package:novel_reader/core/parsers/parsed_book.dart';
+import 'package:novel_reader/core/text/byte_text_decoder.dart';
 
 /// Markdown 解析：# / ## 视为章节标题，### 视为段内标题，
 /// 引用/列表/代码块保留结构，行内 Markdown 语法被剥离。
@@ -11,18 +13,33 @@ class MarkdownParser implements BookParser {
   static final RegExp _quote = RegExp(r'^>\s?(.*)$');
   static final RegExp _bullet = RegExp(r'^\s*[-*+]\s+(.*)$');
   static final RegExp _ordered = RegExp(r'^\s*\d+[.、]\s+(.*)$');
-  static final RegExp _bold = RegExp(r'\*\*(.+?)\*\*');
-  static final RegExp _italic = RegExp(r'\*(.+?)\*|_(.+?)_');
-  static final RegExp _code = RegExp(r'`([^`]+)`');
-  static final RegExp _link = RegExp(r'\[([^\]]+)\]\([^)]*\)');
+
+  // 行内语法：顺序敏感，先长后短（图片 → 链接 → 行内代码 → 粗体 → 斜体）
   static final RegExp _image = RegExp(r'!\[([^\]]*)\]\([^)]*\)');
+  static final RegExp _link = RegExp(r'\[([^\]]+)\]\([^)]*\)');
+  static final RegExp _code = RegExp(r'`([^`]+)`');
+  static final RegExp _bold = RegExp(r'\*\*([^*\n]+)\*\*');
+  static final RegExp _italicStar = RegExp(r'\*([^*\n]+)\*');
+
+  /// 下划线斜体只在**词边界**生效。
+  ///
+  /// 否则 `snake_case_name` 会被当成斜体、把中间吃掉。
+  /// 用 `\b` 而不是环视断言，兼容性最好。
+  static final RegExp _italicUnderscore = RegExp(r'\b_([^_\n]+)_\b');
 
   @override
   Future<ParsedBook> parseFile(String path) async {
-    final String raw = await File(path).readAsString(encoding: utf8);
-    final List<String> lines = const LineSplitter().convert(raw);
+    final File file = await checkBookFile(path);
+    final DecodedText decoded = decodeBookFileBytes(await file.readAsBytes());
+    final List<String> lines = const LineSplitter().convert(decoded.text);
 
-    final String title = guessTitle(lines, fileNameTitle(path));
+    // 猜书名时先剥掉行内/标题语法：否则 `# 夜航船` 会连井号一起进书名，
+    // 而且后面 `_skipTitleHeading` 拿剥好的文本去比对也对不上，
+    // 结果就是书名带 `#`、正文里还重复一遍标题
+    final String title = guessTitle(
+      lines.map(_titleCandidate).toList(growable: false),
+      fileNameTitle(path),
+    );
     final List<String> body = _skipTitleHeading(lines, title);
 
     final List<ParsedChapter> chapters = <ParsedChapter>[];
@@ -79,6 +96,16 @@ class MarkdownParser implements BookParser {
     return ParsedBook(title: title, author: '', chapters: chapters);
   }
 
+  /// 用来猜书名的候选文本：剥掉 `#` 前缀与行内语法。
+  static String _titleCandidate(String line) {
+    final String trimmed = line.trim();
+    final RegExpMatch? heading = _heading.firstMatch(trimmed);
+    if (heading != null) {
+      return stripInline(heading.group(2)!);
+    }
+    return stripInline(trimmed);
+  }
+
   /// 收集 ``` 围栏代码块，返回围栏结束行的下标（未闭合则到文末）。
   int _appendCodeBlock(List<String> lines, int startIndex, List<ParagraphBlock> out) {
     final StringBuffer buffer = StringBuffer();
@@ -107,13 +134,19 @@ class MarkdownParser implements BookParser {
   }
 
   /// 剥离行内 Markdown 语法，只留纯文本。
-  /// 替换串用原始字符串：$1 是正则反向引用，不能被 Dart 当成插值。
+  ///
+  /// 这里有原来的一个硬伤：`String.replaceAll` 的替换串是**字面量**，
+  /// 不支持 `$1` 反向引用（只有 `replaceAllMapped` 支持）。
+  /// 所以旧实现把 `**粗体**` 变成了字面量 `$1`，正文直接被污染。
+  /// 现在全部走 [RegExpMatch] 显式取组，不再依赖反向引用。
   static String stripInline(String text) {
-    String result = text.replaceAll(_image, r'$1');
-    result = result.replaceAll(_link, r'$1');
-    result = result.replaceAll(_bold, r'$1');
-    result = result.replaceAll(_italic, r'$1$2');
-    result = result.replaceAll(_code, r'$1');
+    String result = text;
+    result = result.replaceAllMapped(_image, (Match m) => m.group(1) ?? '');
+    result = result.replaceAllMapped(_link, (Match m) => m.group(1) ?? '');
+    result = result.replaceAllMapped(_code, (Match m) => m.group(1) ?? '');
+    result = result.replaceAllMapped(_bold, (Match m) => m.group(1) ?? '');
+    result = result.replaceAllMapped(_italicStar, (Match m) => m.group(1) ?? '');
+    result = result.replaceAllMapped(_italicUnderscore, (Match m) => m.group(1) ?? '');
     return result.trim();
   }
 }

@@ -1,0 +1,101 @@
+{
+  "id": "sample.demo",
+  "name": "示例源（本地 fixture）",
+  "author": "novel_reader",
+  "description": "声明式数据源的完整示例。默认指向本地 fixture 站点 http://127.0.0.1:8765（可用 tool/fixture_site.dart 启动），把 baseUrl 改成任意同结构站点即可抓真实内容。",
+  "apiVersion": 4,
+  "versionCode": 1,
+  "versionName": "1.0.0",
+  "baseUrl": "http://127.0.0.1:8765",
+  "charset": "utf-8",
+  "headers": {
+    "Referer": "{base}/"
+  },
+  "capabilities": ["search", "explore", "bookInfo", "volumes", "chapter"],
+  "permits": 4,
+  "cacheTtlMs": 600000,
+  "cacheMaxEntries": 32,
+
+  "search": {
+    "types": [
+      { "id": "name", "name": "按书名", "path": "/search?q={q}&page={page}" },
+      { "id": "author", "name": "按作者", "path": "/search?author={q}&page={page}" }
+    ],
+    "list": ".book-item",
+    "fields": {
+      "title": "h3 a",
+      "id": "h3 a@href|regex:(\\d+)",
+      "author": ".author",
+      "cover": "img@src",
+      "description": ".intro"
+    }
+  },
+
+  "explore": [
+    {
+      "id": "rank",
+      "title": "排行榜",
+      "path": "/rank?page={page}{extra}",
+      "list": ".book-item",
+      "fields": {
+        "title": "h3 a",
+        "id": "h3 a@href|regex:(\\d+)",
+        "author": ".author",
+        "cover": "img@src"
+      },
+      "filters": [
+        {
+          "type": "single",
+          "key": "sort",
+          "title": "排序",
+          "choices": { "默认": "", "热度": "&sort=hot", "最新": "&sort=new" },
+          "default": "默认"
+        },
+        { "type": "toggle", "key": "finished", "title": "只看完结" }
+      ]
+    },
+    {
+      "id": "latest",
+      "title": "最近更新",
+      "path": "/latest?page={page}{extra}",
+      "list": ".book-item",
+      "fields": {
+        "title": "h3 a",
+        "id": "h3 a@href|regex:(\\d+)",
+        "author": ".author",
+        "cover": "img@src"
+      }
+    }
+  ],
+
+  "bookInfo": {
+    "path": "/book/{id}",
+    "fields": {
+      "title": "#info h1",
+      "author": "#info .author|replace:作者：,",
+      "cover": "#info img.cover@src",
+      "description": "#intro",
+      "tags": ".tag",
+      "isComplete": "#info .status"
+    }
+  },
+
+  "volumes": {
+    "path": "/book/{id}",
+    "volumes": ".volume",
+    "volumeTitle": ".volume-title",
+    "chapters": "li a",
+    "chapterFields": {
+      "title": "",
+      "id": "@href|regex:/read/(\\d+)"
+    }
+  },
+
+  "chapter": {
+    "path": "/read/{chapterId}",
+    "title": "#title",
+    "content": "#content p",
+    "next": "#next@href|regex:/read/(\\d+)",
+    "prev": "#prev@href|regex:/read/(\\d+)"
+  }
+}

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:novel_reader/core/parsers/book_file_guard.dart';
+import 'package:novel_reader/core/text/byte_text_decoder.dart';
 import 'package:novel_reader/data/dao/book_dao.dart';
 import 'package:novel_reader/data/dao/progress_dao.dart';
 import 'package:novel_reader/data/repositories/book_repository.dart';
@@ -104,8 +106,18 @@ class BookshelfController extends ChangeNotifier {
   }
 
   /// 导入异常带中文可读信息，其余异常按原样展示。
+  ///
+  /// 解析/编码层抛出的异常都是「可以直接给用户看的一句话」，
+  /// 这里显式识别它们，而不是碰巧依赖 `toString()` 恰好返回了中文——
+  /// 否则改动其中一个类的 toString 就会让用户看到内部类型名。
   String _friendlyError(Object error) {
     if (error is ImportException) {
+      return error.message;
+    }
+    if (error is BookFileRejected) {
+      return error.message;
+    }
+    if (error is TextDecodeException) {
       return error.message;
     }
     return error.toString();

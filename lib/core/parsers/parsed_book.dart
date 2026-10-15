@@ -23,14 +23,23 @@ class ParagraphBlock {
     };
   }
 
+  /// 从 content.jsonl 的一行反序列化。
+  ///
+  /// 取值全部走容错路径：content.jsonl 是**逐行**读取的，
+  /// 一行缺字段就抛异常会让**整章打不开**（历史文件、手改文件、
+  /// 写到一半被杀的文件都会踩到）。缺字段时退化成普通段落，
+  /// 而不是把异常抛给阅读器。
   static ParagraphBlock fromJson(Map<String, Object?> json) {
+    final Object? rawText = json['text'];
+    final Object? rawLevel = json['level'];
+    final int level = rawLevel is num ? rawLevel.toInt() : 1;
     return ParagraphBlock(
-      text: json['text'] as String,
+      text: rawText is String ? rawText : '',
       kind: ParagraphKind.values.firstWhere(
         (kind) => kind.name == json['kind'],
         orElse: () => ParagraphKind.paragraph,
       ),
-      headingLevel: json['level'] as int,
+      headingLevel: level < 1 ? 1 : (level > 6 ? 6 : level),
     );
   }
 }

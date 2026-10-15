@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  网络安全策略。
+
+  默认禁止明文 HTTP：在线数据源应当走 HTTPS。
+  只为本机地址开口子，用于演示与联调：
+    - 127.0.0.1 / localhost：`dart run tool/fixture_site.dart` 起的 fixture 站点
+    - 10.0.2.2：Android 模拟器访问宿主机
+  这样既能让示例源开箱可用，又不会像上游参考实现那样全局
+  `usesCleartextTraffic="true"`（等于允许任意明文流量）。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>

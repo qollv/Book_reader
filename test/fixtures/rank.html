@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>排行榜 - fixture</title></head>
+<body>
+<h1>排行榜</h1>
+<div class="book-list">
+  <div class="book-item">
+    <img src="/cover/101.jpg" alt="封面">
+    <h3><a href="/book/101">星海拾遗</a></h3>
+    <span class="author">作者：林间</span>
+    <p class="intro">一名拾荒者在废弃星港里捡到了不该捡的东西。</p>
+  </div>
+  <div class="book-item">
+    <img src="/cover/102.jpg" alt="封面">
+    <h3><a href="/book/102">长夜行舟</a></h3>
+    <span class="author">作者：渡口</span>
+    <p class="intro">渡船人收留了一个不说话的旅客。</p>
+  </div>
+  <div class="book-item">
+    <img src="/cover/103.jpg" alt="封面">
+    <h3><a href="/book/103">纸鸢与海</a></h3>
+    <span class="author">作者：白鹭</span>
+    <p class="intro">她把风筝放到了海面上。</p>
+  </div>
+  <div class="book-item">
+    <!-- 缺 id：引擎应跳过这一条而不是产出坏书 -->
+    <img src="/cover/broken.jpg" alt="封面">
+    <h3><a href="/book/not-a-number">没有编号的书</a></h3>
+    <span class="author">作者：佚名</span>
+  </div>
+</div>
+<div class="pager"><a id="next-page" href="/rank?page=2">下一页</a></div>
+</body>
+</html>

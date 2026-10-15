@@ -44,8 +44,26 @@ class ReaderSettings {
     <double>[32, 28],
   ];
 
-  double get horizontalMargin => marginPresets[marginIndex][0];
-  double get verticalMargin => marginPresets[marginIndex][1];
+  /// 可选配色数量。必须与 `ReadingPalette.all.length` 一致，
+  /// 由测试 (`reader_settings_test.dart`) 断言，避免两边漂移。
+  static const int paletteCount = 5;
+
+  /// 允许的字体族。
+  static const Set<String> fontFamilies = <String>{'system', 'serif', 'kai'};
+
+  /// 数值范围。落在这个区间外的值不是「用户偏好」，是脏数据。
+  static const double minFontScale = 0.8;
+  static const double maxFontScale = 1.6;
+  static const double minLineHeight = 1.4;
+  static const double maxLineHeight = 2.4;
+
+  double get horizontalMargin => marginPresets[_safeMarginIndex][0];
+
+  double get verticalMargin => marginPresets[_safeMarginIndex][1];
+
+  /// 即使有人绕过 [decode] 直接构造出越界的 marginIndex，
+  /// 取值也不会 RangeError —— 阅读器崩溃比钳位难看多了。
+  int get _safeMarginIndex => marginIndex.clamp(0, marginPresets.length - 1);
 
   ReaderSettings copyWith({
     ThemeMode? themeMode,
@@ -79,25 +97,76 @@ class ReaderSettings {
     });
   }
 
+  /// 从 settings 表的 JSON 解码。
+  ///
+  /// **永不抛异常**。旧版本写入的字段、被截断的 JSON、越界的下标，
+  /// 都不该让应用启动即崩：这里统一退化成默认值 + 钳到合法区间。
+  /// 之前 `margin_index: 7` 会 RangeError、缺字段会 Null cast 失败、
+  /// 非 JSON 会 FormatException——三种都会在启动路径上炸掉。
   static ReaderSettings decode(String raw) {
-    if (raw.isEmpty) {
-      return ReaderSettings.defaults();
+    final ReaderSettings defaults = ReaderSettings.defaults();
+    if (raw.trim().isEmpty) {
+      return defaults;
     }
-    final Map<String, Object?> json = jsonDecode(raw) as Map<String, Object?>;
+
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(raw);
+    } on FormatException {
+      return defaults;
+    }
+    if (decoded is! Map) {
+      return defaults;
+    }
+    final Map<String, Object?> json = decoded.cast<String, Object?>();
+
     return ReaderSettings(
-      themeMode: ThemeMode.values.firstWhere(
-        (mode) => mode.name == json['theme_mode'],
-        orElse: () => ThemeMode.system,
-      ),
-      paletteIndex: json['palette_index'] as int,
-      fontFamily: json['font_family'] as String,
-      fontScale: (json['font_scale'] as num).toDouble(),
-      lineHeight: (json['line_height'] as num).toDouble(),
-      marginIndex: json['margin_index'] as int,
-      pageAnimation: PageAnimation.values.firstWhere(
-        (animation) => animation.name == json['page_animation'],
-        orElse: () => PageAnimation.slide,
-      ),
+      themeMode: _enumByName(ThemeMode.values, json['theme_mode'], defaults.themeMode),
+      paletteIndex:
+          _clampInt(json['palette_index'], 0, paletteCount - 1, defaults.paletteIndex),
+      fontFamily: _fontFamily(json['font_family'], defaults.fontFamily),
+      fontScale:
+          _clampDouble(json['font_scale'], minFontScale, maxFontScale, defaults.fontScale),
+      lineHeight: _clampDouble(
+          json['line_height'], minLineHeight, maxLineHeight, defaults.lineHeight),
+      marginIndex:
+          _clampInt(json['margin_index'], 0, marginPresets.length - 1, defaults.marginIndex),
+      pageAnimation:
+          _enumByName(PageAnimation.values, json['page_animation'], defaults.pageAnimation),
     );
+  }
+
+  static T _enumByName<T extends Enum>(List<T> values, Object? raw, T fallback) {
+    for (final T value in values) {
+      if (value.name == raw) {
+        return value;
+      }
+    }
+    return fallback;
+  }
+
+  static int _clampInt(Object? raw, int min, int max, int fallback) {
+    if (raw is! num) {
+      return fallback;
+    }
+    return raw.toInt().clamp(min, max);
+  }
+
+  static double _clampDouble(Object? raw, double min, double max, double fallback) {
+    if (raw is! num) {
+      return fallback;
+    }
+    final double value = raw.toDouble();
+    if (value.isNaN || value.isInfinite) {
+      return fallback;
+    }
+    return value.clamp(min, max);
+  }
+
+  static String _fontFamily(Object? raw, String fallback) {
+    if (raw is String && fontFamilies.contains(raw)) {
+      return raw;
+    }
+    return fallback;
   }
 }

@@ -1,13 +1,24 @@
 # novel_reader — 手机小说阅读器
 
-Flutter 跨平台小说阅读软件：本地导入 txt / md / docx 并智能排版，支持 URL / 局域网远程导入，书架管理、进度同步、书签笔记、夜间模式与字体调整。
+Flutter 跨平台小说阅读软件。两条能力线：
 
-完整设计方案见 [docs/项目计划书.md](docs/项目计划书.md)。
+**本地导入与智能排版**：本地导入 txt / md / docx 并智能排版，支持 URL / 局域网远程导入，
+书架管理、进度同步、书签笔记、夜间模式与字体调整。
+
+**在线数据源**：一个数据源 = 一份 JSON 声明（URL 模板 + CSS 选择器），
+不用编译、不用装插件；按源声明的探索页浏览、搜索、整本下载到书架后离线可读。
+
+完整设计方案见 [docs/项目计划书.md](docs/项目计划书.md)；
+与上游参考实现（LightNovelReader）的对标清单见
+[docs/借鉴-LightNovelReader.md](docs/借鉴-LightNovelReader.md)。
 
 ## 功能一览
 
 - **智能排版**：段落重排（txt 硬换行合并）、章节识别、首行缩进、标题 keep-with-next、孤行控制、按屏幕实时分页
-- **远程导入**：URL 直链下载 / 局域网扫码互传 / 云端同步（LAN + HTTP 两种通道）
+- **本地导入**：txt / md / docx，解析失败不留下半成品
+- **在线数据源**：声明式 JSON 源 + CSS 规则引擎；探索页（含过滤器）、多方式搜索、整本导入书架
+- **离线可读**：在线章节本地缓存 + 本地优先双发射；导入后与本地书完全同构
+- **远程导入**：URL 直链下载 / 局域网扫码互传
 - **书架**：网格书架、阅读百分比、长按删书（连带清进度/书签/笔记）
 - **阅读器**：滑动或滚动翻页、进度滑块、目录跳章、长按记笔记
 - **外观**：5 套配色（含夜间）、字体/字号/行距/页边距/翻页方式可调，即时持久化
@@ -16,9 +27,15 @@ Flutter 跨平台小说阅读软件：本地导入 txt / md / docx 并智能排�
 ## 快速开始
 
 ```bash
-cd novel_reader
 flutter pub get
 flutter run
+```
+
+试在线数据源（不需要真实站点）：
+
+```bash
+dart run tool/fixture_site.dart   # 起本地 fixture 站点，默认 127.0.0.1:8765
+# 应用里：探索 → 安装内置示例源 → 浏览 / 搜索 / 加入书架
 ```
 
 运行测试：
@@ -32,20 +49,25 @@ flutter test
 ```
 lib/
 ├── main.dart               # 依赖装配与启动
-├── models/                 # 数据模型（Book/Chapter/Progress/Bookmark/Note/Settings）
+├── models/                 # 数据模型 + 数据源声明
 ├── core/
 │   ├── text/               # txt 续行合并
 │   ├── parsers/            # txt / md / docx 解析器
-│   └── pagination/         # TextPainter 分页引擎
+│   ├── pagination/         # TextPainter 分页引擎
+│   └── source/             # 在线源：字段规格 / URL 模板 / 规则引擎
 ├── data/
-│   ├── app_database.dart   # sqflite 建库
-│   ├── dao/                # 各表 DAO
-│   └── repositories/       # 仓库层
+│   ├── schema.dart         # 建表与迁移脚本（测试复用同一份）
+│   ├── app_database.dart   # sqflite 装配
+│   ├── dao/                # 八张表各自的 DAO
+│   └── repositories/       # 本地仓库 / 阅读数据 / 在线仓库
 ├── services/
 │   ├── import/             # 本地 / URL / 局域网导入
+│   ├── source/             # 传输层 / 缓存 HTTP / 编码 / 源注册表
 │   └── sync/               # 同步合并 + 传输通道
-├── state/                  # Settings / Bookshelf / Reader 控制器
-└── ui/                     # 页面与组件
+├── state/                  # 五个 ChangeNotifier 控制器
+└── ui/                     # 主框架、书架、阅读器、探索、搜索、源管理
+assets/sources/             # 随包示例源（同时是文档与测试对象）
+tool/fixture_site.dart      # 本地 fixture 站点
 ```
 
 ## 环境要求
@@ -55,6 +77,26 @@ lib/
 
 ## 已知限制
 
-- docx 仅提取正文文本，图片与复杂表格忽略
+- docx 只提取正文文本：图片忽略，表格内文字并入正文而不还原成表格
 - 淡入翻页暂复用滑动动画
 - 云端同步需用户自备服务端
+- 在线源只支持 HTML 页面型站点（不含 JSON API / JS 渲染站点），正文只取纯文本段落
+- 分页测量会留 1px 安全余量（保证偏保守、不溢出），长段落偶尔会提前一页分页
+
+## 编码与导入边界
+
+导入会先做体检再解析，出问题时报的是**能看懂的一句话**而不是内部异常：
+
+- 扩展名白名单：`txt / text / md / markdown / docx`，未知类型直接拒绝（不再按 txt 兜底解析）
+- 编码自动识别：UTF-8 / UTF-8 BOM / UTF-16 BOM / GBK-GB18030
+  （顺序是先严格 UTF-8 再回退 GBK —— 反过来会把正常中文解成乱码）
+- 二进制内容（PDF、图片、压缩包）会被识别并提示，而不是解出一堆乱码
+- 单文件上限 100 MB
+
+## 尚未验证
+
+- **应用尚未在真机上运行过**：APK 可构建并通过 `aapt2` 静态校验，
+  但没有设备/模拟器实际渲染过，也没有人工走完一遍流程
+- **在线源只对接过本地 fixture 站点**，未验证任何真实小说站
+- `test/zz_*.dart` 是早期分析留下的只打印不断言的脚本，跑起来永远通过；
+  本次修复对应的断言在 `test/regression/`

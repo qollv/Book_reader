@@ -26,7 +26,15 @@ class ReaderRepository {
   }
 
   /// 加载某章段落块：content.jsonl 一段一行，按章节记录的区间读取。
+  ///
+  /// 逐行容错：单行 JSON 坏了只跳过那一行，不让整章变成空白。
+  /// 之前是直接 `jsonDecode` + `ParagraphBlock.fromJson`，一行损坏就抛异常，
+  /// 阅读器打开这一章直接报错——对「正文文件被外部改动过」的用户
+  /// 来说等于这本书废了。跳过多少行记在 [lastSkippedLines] 里便于排查。
+  int lastSkippedLines = 0;
+
   Future<List<ParagraphBlock>> loadChapterBlocks(String contentPath, Chapter chapter) async {
+    lastSkippedLines = 0;
     final File file = File(contentPath);
     if (!await file.exists()) {
       return <ParagraphBlock>[];
@@ -38,11 +46,26 @@ class ReaderRepository {
     }
     final List<ParagraphBlock> blocks = <ParagraphBlock>[];
     for (int i = chapter.paragraphStart; i < end; i++) {
-      if (lines[i].trim().isEmpty) {
+      final String line = lines[i];
+      if (line.trim().isEmpty) {
         continue;
       }
-      final Map<String, Object?> json = jsonDecode(lines[i]) as Map<String, Object?>;
-      blocks.add(ParagraphBlock.fromJson(json));
+      try {
+        final Object? decoded = jsonDecode(line);
+        if (decoded is! Map) {
+          lastSkippedLines++;
+          continue;
+        }
+        final ParagraphBlock block = ParagraphBlock.fromJson(decoded.cast<String, Object?>());
+        if (block.text.trim().isEmpty) {
+          continue;
+        }
+        blocks.add(block);
+      } on FormatException {
+        lastSkippedLines++;
+      } on Object {
+        lastSkippedLines++;
+      }
     }
     return blocks;
   }

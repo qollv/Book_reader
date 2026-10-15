@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:novel_reader/core/parsers/book_file_guard.dart';
 import 'package:novel_reader/core/parsers/book_parser.dart';
 import 'package:novel_reader/core/parsers/parsed_book.dart';
+import 'package:novel_reader/core/text/byte_text_decoder.dart';
 import 'package:novel_reader/core/text/text_normalizer.dart';
 
 /// txt 解析：章节识别 + 硬换行合并。
@@ -14,8 +16,10 @@ class TxtParser implements BookParser {
 
   @override
   Future<ParsedBook> parseFile(String path) async {
-    final String raw = await File(path).readAsString(encoding: utf8);
-    final List<String> lines = const LineSplitter().convert(raw);
+    final File file = await checkBookFile(path);
+    // 不再写死 UTF-8：中文 txt 大量是 GBK，写死会让导入直接抛异常
+    final DecodedText decoded = decodeBookFileBytes(await file.readAsBytes());
+    final List<String> lines = const LineSplitter().convert(decoded.text);
 
     final String title = guessTitle(lines, fileNameTitle(path));
     final List<String> body = _dropTitleLines(lines, title);

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'package:novel_reader/core/parsers/parsed_book.dart';
+import 'package:novel_reader/core/pagination/line_box.dart';
 import 'package:novel_reader/core/pagination/page_line.dart';
 import 'package:novel_reader/core/pagination/paginator.dart';
 import 'package:novel_reader/models/reader_settings.dart';
@@ -179,7 +180,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                 itemCount: reader.pages.length,
                 onPageChanged: (int index) => reader.goToPage(index),
                 itemBuilder: (BuildContext context, int index) {
-                  return _PageContentView(
+                  return ReaderPageContentView(
                     page: reader.pages[index],
                     palette: palette,
                     settings: settings,
@@ -223,13 +224,22 @@ class _ReaderScreenState extends State<ReaderScreen> {
 }
 
 /// 单页正文：按行渲染，首行缩进、标题居中、引用带侧边线、代码等宽。
-class _PageContentView extends StatelessWidget {
-  const _PageContentView({
+///
+/// 公开而非私有，是为了让测试能把它真的渲染出来、量出实际高度，
+/// 从而断言「分页说放得下的页，渲染出来确实放得下」——
+/// 这个不变量原先被破坏了（代码块小屏溢出 120px），
+/// 而只靠单元测试看不见，必须量真东西。
+class ReaderPageContentView extends StatelessWidget {
+  const ReaderPageContentView({
+    super.key,
     required this.page,
     required this.palette,
     required this.settings,
     required this.onLongPressLine,
   });
+
+  /// 内容容器的 key：测试据此读取内容实际高度。
+  static const Key contentKey = ValueKey<String>('reader-page-content');
 
   final ReaderPage page;
   final ReadingPalette palette;
@@ -239,62 +249,83 @@ class _PageContentView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final double baseSize = 18 * settings.fontScale;
+    final List<PageLine> lines = page.lines;
     return SingleChildScrollView(
       padding: EdgeInsets.symmetric(
         horizontal: settings.horizontalMargin,
         vertical: settings.verticalMargin,
       ),
       child: Column(
+        key: contentKey,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
-        children: page.lines.map((PageLine line) => _buildLine(line, baseSize)).toList(),
+        children: <Widget>[
+          for (int i = 0; i < lines.length; i++)
+            _buildLine(lines[i], baseSize, isPageFirst: i == 0),
+        ],
       ),
     );
   }
 
-  Widget _buildLine(PageLine line, double baseSize) {
+  Widget _buildLine(PageLine line, double baseSize, {required bool isPageFirst}) {
+    // 字体缩放与字体族都来自共享约定（core/pagination/line_box.dart），
+    // 分页器用的是同一份数字，否则量的和渲染的不是同一件事
     final TextStyle style = TextStyle(
-      fontSize: baseSize,
+      fontSize: baseSize * LineBox.fontScaleFactor(line.kind, line.headingLevel),
       height: settings.lineHeight,
       color: palette.text,
-      fontFamily: settings.fontFamily == 'system' ? null : settings.fontFamily,
+      fontFamily: LineBox.fontFamily(line.kind, settings.fontFamily),
     );
-    if (line.isHeading) {
-      final double scale = 1.3 - 0.1 * (line.headingLevel - 1);
-      return Padding(
-        padding: EdgeInsets.symmetric(vertical: baseSize * 0.3),
-        child: Text(
-          line.text,
-          textAlign: TextAlign.center,
-          style: style.copyWith(fontSize: baseSize * scale, fontWeight: FontWeight.bold),
-        ),
-      );
+
+    final Widget content = _buildLineContent(line, baseSize, style);
+
+    // 段间距：分页器按「段首行、且不是本页首行」计入高度，渲染必须一致。
+    // 原先分页器算了、渲染器没画，等于白留了半行空间，也说明两边本就在漂移。
+    final double gap = !isPageFirst && line.isFirstLineOfParagraph
+        ? LineBox.paragraphSpacingPx(baseSize)
+        : 0;
+    if (gap <= 0) {
+      return content;
     }
-    if (line.kind == ParagraphKind.quote) {
-      return Container(
-        margin: EdgeInsets.symmetric(vertical: baseSize * 0.2),
-        padding: EdgeInsets.only(left: baseSize * 0.8),
-        decoration: BoxDecoration(
-          border: Border(left: BorderSide(color: palette.secondary, width: 2)),
-        ),
-        child: Text(line.text, style: style.copyWith(color: palette.secondary)),
-      );
+    return Padding(padding: EdgeInsets.only(top: gap), child: content);
+  }
+
+  Widget _buildLineContent(PageLine line, double baseSize, TextStyle style) {
+    switch (line.kind) {
+      case ParagraphKind.heading:
+        return Padding(
+          padding: EdgeInsets.symmetric(vertical: baseSize * LineBox.headingPaddingVertical),
+          child: Text(
+            line.text,
+            textAlign: TextAlign.center,
+            style: style.copyWith(fontWeight: FontWeight.bold),
+          ),
+        );
+      case ParagraphKind.quote:
+        return Container(
+          margin: EdgeInsets.symmetric(vertical: baseSize * LineBox.quoteMarginVertical),
+          padding: EdgeInsets.only(left: baseSize * 0.8),
+          decoration: BoxDecoration(
+            border: Border(left: BorderSide(color: palette.secondary, width: 2)),
+          ),
+          child: Text(line.text, style: style.copyWith(color: palette.secondary)),
+        );
+      case ParagraphKind.code:
+        return Container(
+          margin: EdgeInsets.symmetric(vertical: baseSize * LineBox.codeMarginVertical),
+          padding: EdgeInsets.all(baseSize * LineBox.codePadding),
+          color: palette.secondary.withValues(alpha: 0.12),
+          child: Text(line.text, style: style),
+        );
+      case ParagraphKind.paragraph:
+        if (line.isFirstLineOfParagraph) {
+          return Padding(
+            padding: EdgeInsets.only(left: baseSize * 2),
+            child: _lineText(line, style),
+          );
+        }
+        return _lineText(line, style);
     }
-    if (line.kind == ParagraphKind.code) {
-      return Container(
-        margin: EdgeInsets.symmetric(vertical: baseSize * 0.2),
-        padding: EdgeInsets.all(baseSize * 0.5),
-        color: palette.secondary.withValues(alpha: 0.12),
-        child: Text(line.text, style: style.copyWith(fontFamily: 'monospace')),
-      );
-    }
-    if (line.isFirstLineOfParagraph) {
-      return Padding(
-        padding: EdgeInsets.only(left: baseSize * 2),
-        child: _lineText(line, style),
-      );
-    }
-    return _lineText(line, style);
   }
 
   Widget _lineText(PageLine line, TextStyle style) {

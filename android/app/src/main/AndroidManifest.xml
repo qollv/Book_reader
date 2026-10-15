@@ -1,8 +1,14 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 线上运行需要联网：URL 导入、局域网互传、云端同步、在线数据源。
+         debug 构建由 Flutter 自动注入该权限，release 不会——所以必须写在这里，
+         否则 release 包里所有网络功能都会静默失败。 -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+
     <application
         android:label="novel_reader"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:networkSecurityConfig="@xml/network_security_config">
         <activity
             android:name=".MainActivity"
             android:exported="true"

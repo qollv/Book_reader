@@ -43,12 +43,33 @@ class ReadingProgress {
 
   static ReadingProgress fromRow(Map<String, Object?> row) {
     return ReadingProgress(
-      bookId: row['book_id'] as String,
-      chapterIndex: row['chapter_index'] as int,
-      paragraphIndex: row['paragraph_index'] as int,
-      lineIndex: row['line_index'] as int,
-      percent: row['percent'] as double,
-      updatedAt: row['updated_at'] as int,
+      bookId: _str(row['book_id']),
+      chapterIndex: _int(row['chapter_index']),
+      paragraphIndex: _int(row['paragraph_index']),
+      lineIndex: _int(row['line_index']),
+      // SQLite 里 REAL 列可能被存成整数（写入 0 而不是 0.0），
+      // 直接 `as double` 会在这种情况下抛类型错误
+      percent: _double(row['percent']).clamp(0.0, 1.0),
+      updatedAt: _int(row['updated_at']),
     );
   }
+}
+
+String _str(Object? value) => value is String ? value : '';
+
+int _int(Object? value) {
+  if (value is int) {
+    return value;
+  }
+  if (value is num) {
+    return value.toInt();
+  }
+  return 0;
+}
+
+double _double(Object? value) {
+  if (value is num) {
+    return value.toDouble();
+  }
+  return 0;
 }

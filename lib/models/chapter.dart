@@ -25,12 +25,14 @@ class Chapter {
   }
 
   static Chapter fromRow(Map<String, Object?> row) {
+    // 容错读取：目录行残缺不该让整本书打不开
     return Chapter(
-      bookId: row['book_id'] as String,
-      index: row['chapter_index'] as int,
-      title: row['title'] as String,
-      paragraphStart: row['paragraph_start'] as int,
-      paragraphEnd: row['paragraph_end'] as int,
+      bookId: row['book_id'] is String ? row['book_id']! as String : '',
+      index: row['chapter_index'] is num ? (row['chapter_index']! as num).toInt() : 0,
+      title: row['title'] is String ? row['title']! as String : '',
+      paragraphStart:
+          row['paragraph_start'] is num ? (row['paragraph_start']! as num).toInt() : 0,
+      paragraphEnd: row['paragraph_end'] is num ? (row['paragraph_end']! as num).toInt() : 0,
     );
   }
 }
