@@ -11,6 +11,7 @@ import 'package:novel_reader/ui/pages/annotations_page.dart';
 import 'package:novel_reader/ui/pages/bookshelf_page.dart';
 import 'package:novel_reader/ui/pages/reader_screen.dart';
 import 'package:novel_reader/ui/theme/theme_mode_resolver.dart';
+import 'package:novel_reader/ui/widgets/import_options_sheet.dart';
 import 'package:novel_reader/ui/widgets/reader_settings_sheet.dart';
 
 import 'test_support.dart';
@@ -229,6 +230,71 @@ void main() {
       expect(find.text('设置保存失败，请稍后重试'), findsOneWidget);
       expect(controller.settings.themeMode, ThemeMode.system,
           reason: '持久化失败后内存回滚到上一份设置');
+    });
+
+    // DEF-12：对话框控制器改由 StatefulWidget State 持有，退出动画期间
+    // 框架重建不得摸到已 dispose 的控制器（修复前确定性抛框架断言）
+    testWidgets('FT-UI-12 URL 导入对话框：取消不触发控制器提前 dispose',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(fullProviderWrap(
+        harness,
+        Builder(
+          builder: (BuildContext context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(
+                onPressed: () => ImportOptionsSheet.show(
+                  context,
+                  onPickLocal: () async {},
+                  onImportUrl: (_) async {},
+                ),
+                child: const Text('打开导入选项'),
+              ),
+            ),
+          ),
+        ),
+      ));
+      await tester.tap(find.text('打开导入选项'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('URL 链接'));
+      await tester.pumpAndSettle();
+      expect(find.text('输入书籍链接'), findsOneWidget);
+
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull,
+          reason: '对话框退出动画期间不得使用已 dispose 的控制器');
+    });
+
+    testWidgets('FT-UI-13 笔记对话框：取消不触发控制器提前 dispose',
+        (WidgetTester tester) async {
+      Book? book;
+      await tester.runAsync(() async {
+        book = await harness.bookRepository.importFile(
+            sampleBookPath('测试书1-雨夜听刀.txt'));
+        harness.readerController.provideConfig(const PaginationConfig(
+          fontSize: 18,
+          lineHeight: 1.8,
+          pageWidth: 400,
+          pageHeight: 600,
+          horizontalMargin: 24,
+          verticalMargin: 20,
+        ));
+        await harness.readerController.openBook(book!.id);
+      });
+
+      await tester.pumpWidget(wrap(const ReaderScreen()));
+      await drainRealAsync(tester);
+      await tester.pumpAndSettle();
+
+      await tester.longPress(find.text('作者：测试用户'));
+      await tester.pumpAndSettle();
+      expect(find.text('写笔记'), findsOneWidget);
+
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull,
+          reason: '对话框退出动画期间不得使用已 dispose 的控制器');
     });
   });
 }

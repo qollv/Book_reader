@@ -135,5 +135,16 @@ void main() {
           await importer().importFromUrl('$baseUrl/BOOK.TXT?from=share&token=x');
       expect(book.title, '直链大小写');
     });
+
+    // DEF-13：无标题行书籍经 URL 导入时，书名回退到 URL 文件名而非 download
+    test('FT-URL-08 空文件 URL 导入书名取 URL 文件名（DEF-13）', () async {
+      server.listen((HttpRequest request) async {
+        request.response.headers.contentLength = 0;
+        await request.response.close();
+      });
+
+      final Book book = await importer().importFromUrl('$baseUrl/empty.txt');
+      expect(book.title, 'empty');
+    });
   });
 }

@@ -128,7 +128,8 @@ class LanTransferServer {
     }
     // 只取文件名，杜绝 ../ 路径穿越
     final String safeName = p.basename(rawName.trim());
-    if (safeName.isEmpty) {
+    // p.basename('..') 仍是 '..'：必须显式拒绝，否则 rename 到目录上报 OS 错误 500
+    if (safeName.isEmpty || safeName == '.' || safeName == '..') {
       return Response.badRequest(body: 'invalid name');
     }
     final File target = File(p.join(_inboxPath, safeName));

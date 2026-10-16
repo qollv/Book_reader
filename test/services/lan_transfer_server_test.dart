@@ -86,6 +86,21 @@ void main() {
     expect(await File('${tempDir.path}/pwned.txt').exists(), isFalse);
   });
 
+  test('上传 name 为 . / .. 时返回 400（防回归 DEF-14）', () async {
+    await server.start(preferredPort: 0);
+    for (final String rawName in <String>['..', '.']) {
+      final HttpClientRequest request = await client.postUrl(
+        Uri.parse('http://127.0.0.1:${server.port}/upload?name=$rawName'),
+      );
+      request.headers.set('x-token', server.token);
+      request.write('book-content');
+      final HttpClientResponse response = await request.close();
+      expect(response.statusCode, 400, reason: 'name=$rawName');
+      // 不得在 inbox 留下任何文件
+      expect(await Directory('${tempDir.path}/inbox').list().toList(), isEmpty);
+    }
+  });
+
   test('同步数据首拉取返回 404（对端无数据是正常场景）', () async {
     await server.start(preferredPort: 0);
     final HttpClientResponse response = await get('/sync', token: server.token);

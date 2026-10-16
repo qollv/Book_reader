@@ -95,29 +95,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
   }
 
   Future<void> _showNoteDialog(String selectedText) async {
-    final TextEditingController inputController = TextEditingController();
     final String? content = await showDialog<String>(
       context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: const Text('写笔记'),
-          content: TextField(
-            controller: inputController,
-            autofocus: true,
-            maxLines: 5,
-            decoration: const InputDecoration(hintText: '写下这一刻的想法...'),
-          ),
-          actions: <Widget>[
-            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('取消')),
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, inputController.text),
-              child: const Text('保存'),
-            ),
-          ],
-        );
-      },
+      builder: (BuildContext dialogContext) => const _NoteInputDialog(),
     );
-    inputController.dispose();
     if (content == null || content.trim().isEmpty || !mounted) {
       return;
     }
@@ -590,6 +571,45 @@ class _ReaderErrorPage extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// 笔记输入对话框：控制器由 State 持有，随路由完全退出后由框架 dispose，
+/// 避免 await showDialog 返回即 dispose 撞上退出动画重建（DEF-12）。
+class _NoteInputDialog extends StatefulWidget {
+  const _NoteInputDialog();
+
+  @override
+  State<_NoteInputDialog> createState() => _NoteInputDialogState();
+}
+
+class _NoteInputDialogState extends State<_NoteInputDialog> {
+  final TextEditingController _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('写笔记'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        maxLines: 5,
+        decoration: const InputDecoration(hintText: '写下这一刻的想法...'),
+      ),
+      actions: <Widget>[
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+        TextButton(
+          onPressed: () => Navigator.pop(context, _controller.text),
+          child: const Text('保存'),
+        ),
+      ],
     );
   }
 }

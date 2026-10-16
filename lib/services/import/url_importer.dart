@@ -41,7 +41,16 @@ class UrlImporter {
 
     final Directory tempDir = await Directory.systemTemp.createTemp('novel_dl_');
     try {
-      final String savePath = p.join(tempDir.path, 'download.$extension');
+      // DEF-13：下载文件名取 URL 路径的 basename——无标题行书籍的书名回退到
+      // 真实文件名；取不到时再回落 download
+      String baseName = p.basename(uri.path);
+      if (baseName.isEmpty || baseName == '.' || baseName == '..') {
+        baseName = 'download.$extension';
+      } else {
+        // 文件系统保留字符统一替换，防止拼接路径后落盘失败
+        baseName = baseName.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+      }
+      final String savePath = p.join(tempDir.path, baseName);
       // 下载前先探 content-length，超限直接拒，不浪费流量
       final Response<dynamic> head = await _dio.head<dynamic>(
         url.trim(),

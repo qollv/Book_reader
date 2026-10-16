@@ -131,43 +131,13 @@ class _BookshelfPageState extends State<BookshelfPage> {
     String initialUrl,
     String initialToken,
   ) async {
-    final TextEditingController urlController = TextEditingController(text: initialUrl);
-    final TextEditingController tokenController = TextEditingController(text: initialToken);
-    final Map<String, String>? result = await showDialog<Map<String, String>>(
+    return showDialog<Map<String, String>>(
       context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: const Text('配置同步服务'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              TextField(
-                controller: urlController,
-                keyboardType: TextInputType.url,
-                decoration: const InputDecoration(labelText: '服务地址', hintText: 'https://your-sync-server/'),
-              ),
-              TextField(
-                controller: tokenController,
-                decoration: const InputDecoration(labelText: '访问令牌'),
-              ),
-            ],
-          ),
-          actions: <Widget>[
-            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('取消')),
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, <String, String>{
-                'base_url': urlController.text,
-                'api_token': tokenController.text,
-              }),
-              child: const Text('保存并同步'),
-            ),
-          ],
-        );
-      },
+      builder: (BuildContext dialogContext) => _SyncConfigDialog(
+        initialUrl: initialUrl,
+        initialToken: initialToken,
+      ),
     );
-    urlController.dispose();
-    tokenController.dispose();
-    return result;
   }
 
   Future<void> _confirmDelete(BookshelfItem item) async {
@@ -360,6 +330,68 @@ class _ImportingOverlay extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// 同步服务配置对话框：两个输入框的控制器由 State 持有，随路由完全退出后
+/// 由框架 dispose，避免提前 dispose 撞上对话框退出动画重建（DEF-12）。
+class _SyncConfigDialog extends StatefulWidget {
+  const _SyncConfigDialog({required this.initialUrl, required this.initialToken});
+
+  final String initialUrl;
+  final String initialToken;
+
+  @override
+  State<_SyncConfigDialog> createState() => _SyncConfigDialogState();
+}
+
+class _SyncConfigDialogState extends State<_SyncConfigDialog> {
+  late final TextEditingController _urlController;
+  late final TextEditingController _tokenController;
+
+  @override
+  void initState() {
+    super.initState();
+    _urlController = TextEditingController(text: widget.initialUrl);
+    _tokenController = TextEditingController(text: widget.initialToken);
+  }
+
+  @override
+  void dispose() {
+    _urlController.dispose();
+    _tokenController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('配置同步服务'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          TextField(
+            controller: _urlController,
+            keyboardType: TextInputType.url,
+            decoration: const InputDecoration(labelText: '服务地址', hintText: 'https://your-sync-server/'),
+          ),
+          TextField(
+            controller: _tokenController,
+            decoration: const InputDecoration(labelText: '访问令牌'),
+          ),
+        ],
+      ),
+      actions: <Widget>[
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+        TextButton(
+          onPressed: () => Navigator.pop(context, <String, String>{
+            'base_url': _urlController.text,
+            'api_token': _tokenController.text,
+          }),
+          child: const Text('保存并同步'),
+        ),
+      ],
     );
   }
 }

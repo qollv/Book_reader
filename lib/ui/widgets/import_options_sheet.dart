@@ -65,29 +65,10 @@ class ImportOptionsSheet extends StatelessWidget {
   }
 
   Future<void> _askUrl(BuildContext context) async {
-    final TextEditingController inputController = TextEditingController();
     final String? url = await showDialog<String>(
       context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: const Text('输入书籍链接'),
-          content: TextField(
-            controller: inputController,
-            autofocus: true,
-            keyboardType: TextInputType.url,
-            decoration: const InputDecoration(hintText: 'https://.../book.txt'),
-          ),
-          actions: <Widget>[
-            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('取消')),
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, inputController.text.trim()),
-              child: const Text('导入'),
-            ),
-          ],
-        );
-      },
+      builder: (BuildContext dialogContext) => const _UrlInputDialog(),
     );
-    inputController.dispose();
     if (url != null && url.isNotEmpty) {
       await onImportUrl(url);
     }
@@ -97,6 +78,48 @@ class ImportOptionsSheet extends StatelessWidget {
     showModalBottomSheet<void>(
       context: context,
       builder: (_) => const _LanPanel(),
+    );
+  }
+}
+
+/// URL 输入对话框。
+///
+/// 控制器由 State 持有、随部件销毁由框架在路由完全退出后 dispose——
+/// 不能在 await showDialog 返回后立即 dispose：退出动画期间框架仍会重建，
+/// 会摸到已 dispose 的控制器抛框架断言（DEF-12）。
+class _UrlInputDialog extends StatefulWidget {
+  const _UrlInputDialog();
+
+  @override
+  State<_UrlInputDialog> createState() => _UrlInputDialogState();
+}
+
+class _UrlInputDialogState extends State<_UrlInputDialog> {
+  final TextEditingController _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('输入书籍链接'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        keyboardType: TextInputType.url,
+        decoration: const InputDecoration(hintText: 'https://.../book.txt'),
+      ),
+      actions: <Widget>[
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+        TextButton(
+          onPressed: () => Navigator.pop(context, _controller.text.trim()),
+          child: const Text('导入'),
+        ),
+      ],
     );
   }
 }

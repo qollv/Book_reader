@@ -1,7 +1,9 @@
 import 'dart:io';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
+import 'package:provider/provider.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:sqflite/sqflite.dart' as sqflite;
@@ -18,16 +20,18 @@ import 'package:novel_reader/data/repositories/book_repository.dart';
 import 'package:novel_reader/data/repositories/reader_repository.dart';
 import 'package:novel_reader/services/import/book_importer.dart';
 import 'package:novel_reader/services/import/local_file_importer.dart';
+import 'package:novel_reader/services/import/lan_transfer_server.dart';
 import 'package:novel_reader/services/import/url_importer.dart';
 import 'package:novel_reader/services/sync/sync_service.dart';
 import 'package:novel_reader/state/bookshelf_controller.dart';
 import 'package:novel_reader/state/reader_controller.dart';
 import 'package:novel_reader/state/settings_controller.dart';
+import 'package:novel_reader/ui/theme/theme_mode_resolver.dart';
 
 /// 功能测试共享基座。
 ///
 /// 说明：
-/// - 桌面环境没有 sqflite 的 native 插件，用 sqflite_common_ffi 内存库跑真实 DAO；
+/// - 桌面环境没有 sqflite 的 native 插件，用 sqflite_common_ffi 临时文件库跑真实 DAO；
 /// - 表结构镜像自 AppDatabase._createTables（私有），schema 演进时需同步本文件；
 /// - path_provider 用假实现指向临时目录，getApplicationSupportDirectory 才可用。
 
@@ -40,7 +44,7 @@ class _FakePathProviderPlatform extends PathProviderPlatform {
   Future<String?> getApplicationSupportPath() async => supportDir;
 }
 
-/// 一次功能测试的完整装配：内存库 + 真实 DAO/仓库/控制器。
+/// 一次功能测试的完整装配：独立临时文件库 + 真实 DAO/仓库/控制器。
 class TestHarness {
   TestHarness({
     required this.database,
@@ -73,6 +77,10 @@ class TestHarness {
       readerController.dispose();
       bookshelfController.dispose();
       settingsController.dispose();
+      // ReaderController.dispose 会补写最后进度（异步落库），
+      // 给一趟 isolate 往返再关库，否则 close 与在途 upsert 竞争
+      // 抛 database_closed（FT-RC-08 同款时序，收敛到基座）
+      await Future<void>.delayed(const Duration(milliseconds: 50));
     }
     await database.close();
     if (await supportDir.exists()) {
@@ -172,8 +180,13 @@ Future<TestHarness> createHarness() async {
       await Directory.systemTemp.createTemp('novel_harness_');
   PathProviderPlatform.instance = _FakePathProviderPlatform(supportDir.path);
 
+  // 每个 harness 用独立临时文件库，不用 ':memory:'：
+  // sqflite_common_ffi 的 isolate 按路径键注册内存库，两个 ':memory:'
+  // 会共享同一库（后创建的读到先创建的数据，且关闭其一即废掉另一个），
+  // 双设备/多 harness 场景会被这个坑写成假阳性。文件库随 supportDir 删除。
+  final String dbPath = p.join(supportDir.path, 'test.db');
   final sqflite.Database db = await databaseFactoryFfi.openDatabase(
-    ':memory:',
+    dbPath,
     options: OpenDatabaseOptions(
       version: 1,
       onCreate: (sqflite.Database db, int version) => createSchemaForTest(db),
@@ -236,6 +249,57 @@ Future<TestHarness> createHarness() async {
     appStateDao: appStateDao,
   );
 }
+
+/// 镜像 lib/ui/app.dart 的完整 provider 栈包装部件。
+///
+/// 页面会 read/watch 的不只有三个 ChangeNotifier：书架同步按钮读
+/// AppStateDao + ProgressSyncServer，导入面板的局域网面板读
+/// LanTransferServer。早期 UI 测试只提供了三个控制器，导致同步入口
+/// 在测试里直接 ProviderNotFoundException（线上不崩、测试假阳性）。
+/// 新增 UI 测试一律用本函数，保持与线上装配一致。
+Widget fullProviderWrap(TestHarness harness, Widget child,
+    {LanTransferServer? lanServer}) {
+  return MultiProvider(
+    providers: <ChangeNotifierProvider<ChangeNotifier>>[
+      ChangeNotifierProvider<SettingsController>.value(
+          value: harness.settingsController),
+      ChangeNotifierProvider<BookshelfController>.value(
+          value: harness.bookshelfController),
+      ChangeNotifierProvider<ReaderController>.value(
+          value: harness.readerController),
+    ],
+    child: MultiProvider(
+      providers: <Provider<Object>>[
+        Provider<LanTransferServer>.value(
+            value: lanServer ??
+                LanTransferServer(
+                  booksRoot: harness.supportDir.path,
+                  inboxPath: p.join(harness.supportDir.path, 'inbox'),
+                  onFileReceived: (_) {},
+                  syncStorePath:
+                      p.join(harness.supportDir.path, 'sync.json'),
+                )),
+        Provider<ProgressSyncService>.value(value: harness.syncService),
+        Provider<AppStateDao>.value(value: harness.appStateDao),
+      ],
+      child: MaterialApp(
+        home: child,
+        themeMode: resolveThemeMode(harness.settingsController.settings),
+      ),
+    ),
+  );
+}
+
+/// 在真实异步区等待一段时间，排空页面 post-frame 回调触发的真实 I/O
+/// （书架 load / 阅读器 repaginate / 设置持久化等）。
+///
+/// testWidgets 的 body 运行在 FakeAsync 作用域内，真实异步 I/O 只有经
+/// tester.runAsync 才会完成；页面自身的 post-frame 回调同样在此排空，
+/// 否则 tearDown 关闭数据库后回调才落地，会触发「使用已 dispose 的控制器」
+/// 或「写已关闭的数据库」的 post-test 异常。
+Future<void> drainRealAsync(WidgetTester tester) => tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
 
 /// 测试样例书目录（仓库根 test_books）。
 /// flutter test 的当前目录是包目录（novel_reader），上溯一级到仓库根。
