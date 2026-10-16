@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:novel_reader/core/import_exception.dart';
 import 'package:novel_reader/core/parsers/docx_parser.dart';
 import 'package:novel_reader/core/parsers/parsed_book.dart';
 
@@ -56,11 +57,32 @@ void main() {
     expect(book.chapters[0].blocks.first.kind, ParagraphKind.heading);
   });
 
-  test('缺少 document.xml 时抛异常', () async {
+  test('缺少 document.xml 时抛中文 ImportException', () async {
     final File file = File('${tempDir.path}/empty.docx');
     final Archive archive = Archive()
       ..addFile(ArchiveFile('other.txt', 3, utf8.encode('abc')));
     await file.writeAsBytes(ZipEncoder().encode(archive)!);
-    expect(() => DocxParser().parseFile(file.path), throwsA(isA<FormatException>()));
+    await expectLater(
+      DocxParser().parseFile(file.path),
+      throwsA(isA<ImportException>().having(
+        (ImportException e) => e.message,
+        'message',
+        '文件不是有效的 docx，请确认文件格式',
+      )),
+    );
+  });
+
+  test('伪 docx（非 zip 二进制）抛中文 ImportException（DEF-10）', () async {
+    final File file = File('${tempDir.path}/fake.docx');
+    // 全字节范围二进制，非 zip 容器：archive 层原本抛英文技术异常
+    await file.writeAsBytes(List<int>.generate(512, (int i) => i % 256));
+    await expectLater(
+      DocxParser().parseFile(file.path),
+      throwsA(isA<ImportException>().having(
+        (ImportException e) => e.message,
+        'message',
+        '文件不是有效的 docx，请确认文件格式',
+      )),
+    );
   });
 }

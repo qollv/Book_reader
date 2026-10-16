@@ -16,7 +16,6 @@ class ReaderSettingsSheet extends StatelessWidget {
       builder: (_) => const ReaderSettingsSheet(),
     );
   }
-
   @override
   Widget build(BuildContext context) {
     final SettingsController controller = context.watch<SettingsController>();
@@ -47,8 +46,10 @@ class ReaderSettingsSheet extends StatelessWidget {
                 ButtonSegment<ThemeMode>(value: ThemeMode.dark, label: Text('夜间')),
               ],
               selected: <ThemeMode>{settings.themeMode},
-              onSelectionChanged: (Set<ThemeMode> selection) =>
-                  controller.setThemeMode(selection.first),
+              onSelectionChanged: (Set<ThemeMode> selection) => _applySetting(
+                context,
+                () => controller.setThemeMode(selection.first),
+              ),
             ),
             const _SectionTitle('配色'),
             Wrap(
@@ -60,7 +61,7 @@ class ReaderSettingsSheet extends StatelessWidget {
                     selected: settings.paletteIndex == i,
                     backgroundColor: ReadingPalette.all[i].background,
                     labelStyle: TextStyle(color: ReadingPalette.all[i].text),
-                    onSelected: (_) => controller.setPalette(i),
+                    onSelected: (_) => _applySetting(context, () => controller.setPalette(i)),
                   ),
               ],
             ),
@@ -71,8 +72,10 @@ class ReaderSettingsSheet extends StatelessWidget {
                 ButtonSegment<String>(value: 'serif', label: Text('衬线')),
               ],
               selected: <String>{settings.fontFamily},
-              onSelectionChanged: (Set<String> selection) =>
-                  controller.setFontFamily(selection.first),
+              onSelectionChanged: (Set<String> selection) => _applySetting(
+                context,
+                () => controller.setFontFamily(selection.first),
+              ),
             ),
             const _SectionTitle('字号'),
             _SliderRow(
@@ -81,7 +84,7 @@ class ReaderSettingsSheet extends StatelessWidget {
               max: 1.6,
               divisions: 8,
               label: '${(settings.fontScale * 100).round()}%',
-              onChanged: controller.setFontScale,
+              onChanged: (double v) => _applySetting(context, () => controller.setFontScale(v)),
             ),
             const _SectionTitle('行距'),
             _SliderRow(
@@ -90,7 +93,7 @@ class ReaderSettingsSheet extends StatelessWidget {
               max: 2.4,
               divisions: 10,
               label: settings.lineHeight.toStringAsFixed(1),
-              onChanged: controller.setLineHeight,
+              onChanged: (double v) => _applySetting(context, () => controller.setLineHeight(v)),
             ),
             const _SectionTitle('页边距'),
             SegmentedButton<int>(
@@ -100,7 +103,10 @@ class ReaderSettingsSheet extends StatelessWidget {
                 ButtonSegment<int>(value: 2, label: Text('宽')),
               ],
               selected: <int>{settings.marginIndex},
-              onSelectionChanged: (Set<int> selection) => controller.setMargin(selection.first),
+              onSelectionChanged: (Set<int> selection) => _applySetting(
+                context,
+                () => controller.setMargin(selection.first),
+              ),
             ),
             const _SectionTitle('翻页方式'),
             SegmentedButton<PageAnimation>(
@@ -110,8 +116,10 @@ class ReaderSettingsSheet extends StatelessWidget {
                 ButtonSegment<PageAnimation>(value: PageAnimation.fade, label: Text('淡入')),
               ],
               selected: <PageAnimation>{settings.pageAnimation},
-              onSelectionChanged: (Set<PageAnimation> selection) =>
-                  controller.setPageAnimation(selection.first),
+              onSelectionChanged: (Set<PageAnimation> selection) => _applySetting(
+                context,
+                () => controller.setPageAnimation(selection.first),
+              ),
             ),
             const SizedBox(height: 8),
           ],
@@ -119,6 +127,19 @@ class ReaderSettingsSheet extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 执行一次设置变更并吞掉持久化失败的 rethrow，改为 SnackBar 提示，
+/// 避免未捕获异常与「点了没反应」的静默失败。
+void _applySetting(BuildContext context, Future<void> Function() action) {
+  action().catchError((Object _) {
+    if (!context.mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('设置保存失败，请稍后重试')),
+    );
+  });
 }
 
 class _SectionTitle extends StatelessWidget {

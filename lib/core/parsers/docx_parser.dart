@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive.dart';
+import 'package:novel_reader/core/import_exception.dart';
 import 'package:novel_reader/core/parsers/book_parser.dart';
 import 'package:novel_reader/core/parsers/parsed_book.dart';
 import 'package:xml/xml.dart';
@@ -14,10 +15,21 @@ class DocxParser implements BookParser {
   @override
   Future<ParsedBook> parseFile(String path) async {
     final List<int> bytes = await File(path).readAsBytes();
-    final Archive archive = ZipDecoder().decodeBytes(bytes);
+    try {
+      return _parseArchive(ZipDecoder().decodeBytes(bytes), path);
+    } on ImportException {
+      rethrow;
+    } catch (_) {
+      // 伪 docx（非 zip 二进制）或结构损坏：archive/xml 层抛的是英文技术异常，
+      // 统一转换为中文 ImportException，与 txt/md 的防护对齐
+      throw const ImportException('文件不是有效的 docx，请确认文件格式');
+    }
+  }
+
+  ParsedBook _parseArchive(Archive archive, String path) {
     final ArchiveFile? document = _findDocumentXml(archive);
     if (document == null) {
-      throw const FormatException('docx 中缺少 word/document.xml');
+      throw const ImportException('文件不是有效的 docx，请确认文件格式');
     }
 
     // document.xml 声明为 UTF-8，必须按 UTF-8 解码（fromCharCodes 会得到乱码）

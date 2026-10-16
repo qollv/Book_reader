@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:novel_reader/core/pagination/paginator.dart';
+import 'package:novel_reader/data/dao/settings_dao.dart';
 import 'package:novel_reader/models/book.dart';
 import 'package:novel_reader/state/bookshelf_controller.dart';
 import 'package:novel_reader/state/reader_controller.dart';
@@ -188,5 +189,55 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('还没有笔记，阅读时长按正文行即可记笔记'), findsOneWidget);
     });
+
+    // DEF-09 后续项：update 失败 rethrow 后设置面板需有 UI 感知，
+    // 否则用户点了没反应；内存回滚由控制器保证，此处验证提示与回滚。
+    testWidgets('FT-UI-07 设置持久化失败：SnackBar 提示且内存回滚',
+        (WidgetTester tester) async {
+      final SettingsController controller = SettingsController(_FailingSaveDao());
+      addTearDown(controller.dispose);
+
+      await tester.pumpWidget(MultiProvider(
+        providers: <ChangeNotifierProvider<ChangeNotifier>>[
+          ChangeNotifierProvider<BookshelfController>.value(
+              value: harness.bookshelfController),
+          ChangeNotifierProvider<ReaderController>.value(
+              value: harness.readerController),
+          ChangeNotifierProvider<SettingsController>.value(value: controller),
+        ],
+        child: MaterialApp(
+          home: Builder(
+            builder: (BuildContext context) => Scaffold(
+              body: Center(
+                child: ElevatedButton(
+                  onPressed: () => ReaderSettingsSheet.show(context),
+                  child: const Text('打开设置'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ));
+      await tester.tap(find.text('打开设置'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('日间'));
+      await tester.pumpAndSettle();
+      await drainRealAsync(tester);
+      await tester.pumpAndSettle();
+
+      expect(find.text('设置保存失败，请稍后重试'), findsOneWidget);
+      expect(controller.settings.themeMode, ThemeMode.system,
+          reason: '持久化失败后内存回滚到上一份设置');
+    });
   });
+}
+
+/// 保存必失败的假 DAO：模拟磁盘/数据库异常。
+class _FailingSaveDao implements SettingsDao {
+  @override
+  Future<String?> load() async => null;
+
+  @override
+  Future<void> save(String payload) async => throw Exception('disk full');
 }
